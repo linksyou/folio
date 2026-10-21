@@ -24,7 +24,7 @@ Edge 用户将安装命令末尾的 `chrome` 改为 `edge`，并在 `edge://exte
 
 也可以把仓库地址交给 Agent：
 
-> 请阅读这个仓库的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Folio，并告诉我最后需要在浏览器中完成的操作。
+> 请阅读 https://github.com/linksyou/folio 仓库中的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Folio，并告诉我最后需要在浏览器中完成的操作。
 
 ## 使用
 
