@@ -1,4 +1,4 @@
-# Open Web Translator
+# Folio
 
 开源的 Chrome / Edge 网页翻译扩展，支持 ChatGPT 登录和 OpenAI Chat Completions 兼容 API。
 
@@ -9,8 +9,8 @@
 需要 **macOS 或 Linux、Chrome 或 Edge、Node.js 22.12 及以上版本**。目前通过开发者模式加载，尚未上架扩展商店。
 
 ```bash
-git clone https://github.com/linksyou/open-web-translator.git
-cd open-web-translator
+git clone https://github.com/linksyou/folio.git
+cd folio
 npm ci
 npm run check
 npm run install:host -- --browser chrome
@@ -24,7 +24,7 @@ Edge 用户将安装命令末尾的 `chrome` 改为 `edge`，并在 `edge://exte
 
 也可以把仓库地址交给 Agent：
 
-> 请阅读这个仓库的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Open Web Translator，并告诉我最后需要在浏览器中完成的操作。
+> 请阅读这个仓库的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Folio，并告诉我最后需要在浏览器中完成的操作。
 
 ## 使用
 
@@ -47,7 +47,7 @@ npm run install:host -- --browser chrome
 
 然后在扩展管理页点击「重新加载」，刷新已打开的网页和设置页。Edge 用户同样替换浏览器参数。
 
-卸载时先从浏览器移除扩展，再运行 `npm run uninstall:host -- --browser chrome`。卸载辅助程序会保留 `~/.local/share/open-web-translator/data/` 中的账号和设置。
+卸载时先从浏览器移除扩展，再运行 `npm run uninstall:host -- --browser chrome`。卸载辅助程序会保留 `~/.local/share/folio/data/` 中的账号和设置。
 
 ## 源码
 

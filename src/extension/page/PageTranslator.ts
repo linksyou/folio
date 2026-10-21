@@ -20,9 +20,9 @@ const BATCH_CHARACTERS = 1_800;
 const CHUNK_CHARACTERS = 1_500;
 const SHORT_BLOCK_CHARACTERS = 600;
 const DYNAMIC_DELAY_MS = 50;
-const GENERATED_ATTRIBUTE = "data-open-web-translator";
-const HIDDEN_SOURCE_ATTRIBUTE = "data-open-web-translator-source-hidden";
-const DISPLAY_STYLE_ATTRIBUTE = "data-open-web-translator-display-style";
+const GENERATED_ATTRIBUTE = "data-folio";
+const HIDDEN_SOURCE_ATTRIBUTE = "data-folio-source-hidden";
+const DISPLAY_STYLE_ATTRIBUTE = "data-folio-display-style";
 const PAUSE_ERROR_CODES = new Set([
   "AUTH_REQUIRED",
   "AUTH_EXPIRED",
@@ -746,7 +746,7 @@ export class PageTranslator {
     const output = block.output ?? this.document.createElement("span");
     if (!block.output) {
       output.setAttribute(GENERATED_ATTRIBUTE, "translation");
-      output.className = "open-web-translator-translation";
+      output.className = "folio-translation";
     }
     if (output.textContent !== translation) output.textContent = translation;
     if (pending) output.setAttribute("aria-busy", "true");
@@ -1079,12 +1079,12 @@ export class PageTranslator {
     const generated = (node: Node): boolean => node.nodeType === 1 && (
       (node as Element).hasAttribute(GENERATED_ATTRIBUTE)
       || (node as Element).hasAttribute(DISPLAY_STYLE_ATTRIBUTE)
-      || (node as Element).hasAttribute("data-open-web-translator-style")
-      || (node as Element).hasAttribute("data-open-web-translator-ui")
+      || (node as Element).hasAttribute("data-folio-style")
+      || (node as Element).hasAttribute("data-folio-ui")
     );
     const sourceRecords = records.filter((record) => {
       const element = record.target.nodeType === 1 ? record.target as Element : record.target.parentElement;
-      if (element?.closest(`[${GENERATED_ATTRIBUTE}], [${DISPLAY_STYLE_ATTRIBUTE}], [data-open-web-translator-style], [data-open-web-translator-ui]`)) return false;
+      if (element?.closest(`[${GENERATED_ATTRIBUTE}], [${DISPLAY_STYLE_ATTRIBUTE}], [data-folio-style], [data-folio-ui]`)) return false;
       // Changes inside known non-content regions cannot introduce article text.
       // Attribute changes are retained because they can change eligibility.
       if (record.type !== "attributes" && element?.closest("nav, footer, aside, [role~='navigation'], [role~='banner'], [role~='contentinfo'], [role~='complementary']")) return false;

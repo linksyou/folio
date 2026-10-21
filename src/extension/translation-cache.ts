@@ -32,7 +32,7 @@ class IndexedDbTranslationCacheStore implements TranslationCacheStore {
   private open(): Promise<IDBDatabase> {
     return this.database ??= new Promise((resolve, reject) => {
       if (typeof indexedDB === "undefined") { reject(new Error("IndexedDB unavailable")); return; }
-      const request = indexedDB.open("open-web-translator-translations", 1);
+      const request = indexedDB.open("folio-translations", 1);
       let expired = false;
       const timer = setTimeout(() => { expired = true; reject(new Error("Cache open timed out")); }, 1_000);
       request.onupgradeneeded = () => { request.result.createObjectStore("translations", { keyPath: "key" }); };

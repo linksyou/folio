@@ -2,7 +2,7 @@ const SEMANTIC_SELECTOR = "h1, h2, h3, h4, h5, h6, p, li, td, th, dt, dd, [role~
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6, [role~='heading']";
 const MAIN_SELECTOR = "main, [role~='main']";
 const CONTENT_ROOT_SELECTOR = `${MAIN_SELECTOR}, article`;
-const GENERATED_SELECTOR = "[data-open-web-translator], [data-open-web-translator-ui]";
+const GENERATED_SELECTOR = "[data-folio], [data-folio-ui]";
 const OMITTED_TEXT_SELECTOR = [
   "script", "style", "noscript", "form", "input", "textarea", "select", "button",
   "pre", "[contenteditable]:not([contenteditable='false'])", GENERATED_SELECTOR,

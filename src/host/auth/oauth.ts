@@ -169,7 +169,7 @@ async function listenForCallback(state: string, savedClientId: string | undefine
       return;
     }
     response.setHeader("content-type", "text/html; charset=utf-8");
-    response.end("<!doctype html><meta charset=utf-8><title>登录完成</title><p>登录检查即将完成，可以关闭此页面。</p>");
+    response.end("<!doctype html><meta charset=utf-8><title>Folio 登录完成</title><p>登录检查即将完成，可以关闭此页面。</p>");
     if (url.searchParams.has("error")) {
       finish(new AppError("ACCESS_DENIED", "登录未获授权，请确认后重试。"));
       return;
@@ -245,7 +245,7 @@ export async function authorize(options: {
       code_challenge_method: "S256",
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       ext_agent_host_id: options.hostId,
-      ...(!options.previous ? { agent_name_hint: "Open Web Translator" } : {}),
+      ...(!options.previous ? { agent_name_hint: "Folio" } : {}),
       ...(options.previous?.idToken ? { id_token_hint: options.previous.idToken } : {}),
       ...(options.previous?.email ? { login_hint: options.previous.email } : {}),
     }).toString();

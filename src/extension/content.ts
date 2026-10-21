@@ -19,10 +19,10 @@ import {
   translationStyleCss,
 } from "./translation-style.js";
 
-const contentGlobal = globalThis as typeof globalThis & { __openWebTranslatorInstalled?: boolean };
+const contentGlobal = globalThis as typeof globalThis & { __folioInstalled?: boolean };
 
-if (!contentGlobal.__openWebTranslatorInstalled) {
-  contentGlobal.__openWebTranslatorInstalled = true;
+if (!contentGlobal.__folioInstalled) {
+  contentGlobal.__folioInstalled = true;
 
   let contextInvalidated = false;
   const runtimeAvailable = (): boolean => {
@@ -62,10 +62,10 @@ if (!contentGlobal.__openWebTranslatorInstalled) {
   const applyAppearance = () => {
     if (contextInvalidated) return;
     if (!appearanceStyle?.isConnected) {
-      appearanceStyle = document.querySelector<HTMLStyleElement>("style[data-open-web-translator-style]");
+      appearanceStyle = document.querySelector<HTMLStyleElement>("style[data-folio-style]");
       if (!appearanceStyle) {
         appearanceStyle = document.createElement("style");
-        appearanceStyle.setAttribute("data-open-web-translator-style", "");
+        appearanceStyle.setAttribute("data-folio-style", "");
         (document.head ?? document.documentElement).append(appearanceStyle);
       }
     }
@@ -124,7 +124,7 @@ if (!contentGlobal.__openWebTranslatorInstalled) {
   const timings = new TimingLog("page");
   const markFirstVisible = () => {
     if (!click || !runtimeAvailable()) return;
-    const visible = Array.from(document.querySelectorAll<HTMLElement>('[data-open-web-translator="translation"]')).some((node) => {
+    const visible = Array.from(document.querySelectorAll<HTMLElement>('[data-folio="translation"]')).some((node) => {
       const bounds = node.getBoundingClientRect();
       return Boolean(node.textContent?.trim()) && click!.before.get(node) !== node.textContent &&
         bounds.width > 0 && bounds.height > 0 && bounds.top < innerHeight && bounds.bottom > 0;
@@ -292,7 +292,7 @@ if (!contentGlobal.__openWebTranslatorInstalled) {
       }
       click = command.jobId && command.clickedAtEpochMs ? {
         jobId: command.jobId, at: command.clickedAtEpochMs,
-        before: new Map(Array.from(document.querySelectorAll('[data-open-web-translator="translation"]'), (node) => [node, node.textContent])),
+        before: new Map(Array.from(document.querySelectorAll('[data-folio="translation"]'), (node) => [node, node.textContent])),
       } : undefined;
       if (click) timings.mark("ui.commandReceived", { jobId: click.jobId }, {
         clickToCommandMs: Math.max(0, Date.now() - click.at),

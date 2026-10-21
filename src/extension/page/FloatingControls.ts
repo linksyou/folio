@@ -62,7 +62,7 @@ export class FloatingControls {
     if (!document.defaultView) throw new Error("Floating controls require a document window");
     this.view = document.defaultView;
     this.host = document.createElement("div");
-    this.host.dataset.openWebTranslatorUi = "floating";
+    this.host.dataset.folioUi = "floating";
     const root = this.host.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${CSS}</style><button class="trigger" type="button"><img alt="" draggable="false" /></button><span class="announcement" role="status" aria-live="polite"></span>`;
     this.trigger = root.querySelector("button")!;

@@ -118,8 +118,7 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-bottom-width: 2px;
 .settings-layout { display: grid; grid-template-columns: 196px minmax(0, 744px); align-items: start; gap: 48px; width: min(988px, 100%); margin: 0 auto; }
 .settings-sidebar { position: sticky; top: 40px; min-width: 0; }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; color: inherit; text-decoration: none; }
-.sidebar-brand > span { display: grid; gap: 1px; font-size: 15px; font-weight: 650; letter-spacing: -.03em; }
-.sidebar-brand > span > span { font-weight: 450; font-size: 14px; letter-spacing: -.02em; }
+.sidebar-brand > span { font-size: 22px; font-weight: 650; letter-spacing: -.03em; }
 .settings-nav { display: grid; gap: 6px; }
 .settings-nav a { display: flex; align-items: center; gap: 11px; min-height: 43px; padding: 10px 13px; border-radius: 10px; color: var(--muted); font-size: 13px; font-weight: 520; text-decoration: none; transition: color 160ms var(--ease), background 160ms var(--ease); }
 .settings-nav a svg { width: 19px; height: 19px; flex: none; }
@@ -271,8 +270,7 @@ dialog p { color: var(--muted); font-size: 13px; }
   .settings-layout { grid-template-columns: 168px minmax(0, 1fr); gap: 28px; }
   .settings-sidebar { top: 36px; }
   .sidebar-brand { gap: 8px; }
-  .sidebar-brand > span { font-size: 14px; }
-  .sidebar-brand > span > span { font-size: 13px; }
+  .sidebar-brand > span { font-size: 20px; }
   .settings-card { padding: 20px; }
   .section-caption { max-width: 116px; }
   .footer-actions { align-items: flex-start; flex-direction: column; gap: 12px; }

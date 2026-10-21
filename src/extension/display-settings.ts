@@ -19,7 +19,7 @@ export async function saveDisplayMode(mode: DisplayMode, onlyIfMissing = false):
     return mode;
   };
   return globalThis.navigator?.locks
-    ? navigator.locks.request("open-web-translator-display-settings", write)
+    ? navigator.locks.request("folio-display-settings", write)
     : write();
 }
 

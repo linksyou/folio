@@ -234,7 +234,7 @@ required<HTMLButtonElement>("export-diagnostics").addEventListener("click", () =
     const url = URL.createObjectURL(new Blob([JSON.stringify(response.result, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = "open-web-translator-performance.json";
+    link.download = "folio-performance.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });

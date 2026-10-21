@@ -33,7 +33,7 @@ await cp("src/extension/icons", "dist/extension/icons", { recursive: true });
 const icons = Object.fromEntries([16, 32, 48, 128].map((size) => [size, `icons/icon-${size}.png`]));
 await writeFile("dist/extension/manifest.json", JSON.stringify({
   manifest_version: 3,
-  name: "Open Web Translator",
+  name: "Folio",
   version: "0.1.0",
   description: "使用 ChatGPT 或自定义 API，按网站自动翻译网页正文，支持双语或仅译文阅读。",
   minimum_chrome_version: "120",
@@ -47,7 +47,7 @@ await writeFile("dist/extension/manifest.json", JSON.stringify({
     "translate-page": { suggested_key: { default: "Alt+A" }, description: "翻译当前网页正文" },
     "restore-page": { suggested_key: { default: "Alt+R" }, description: "恢复当前网页原文" },
   },
-  action: { default_popup: "popup.html", default_title: "翻译当前网页", default_icon: icons },
+  action: { default_popup: "popup.html", default_title: "Folio · 翻译当前网页", default_icon: icons },
   options_ui: { page: "options.html", open_in_tab: true },
   background: { service_worker: "background.js" },
 }, null, 2) + "\n");

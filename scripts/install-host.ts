@@ -17,10 +17,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EXTENSION_ID } from "../src/shared/extension-identity.js";
 import { HOST_NAME } from "../src/shared/protocol.js";
 
-const MANAGED_MARKER = "open-web-translator managed file";
-const INSTALL_MARKER = ".open-web-translator-install.json";
+const MANAGED_MARKER = "folio managed file";
+const INSTALL_MARKER = ".folio-install.json";
 const MINIMUM_NODE = [22, 12] as const;
-const NATIVE_DESCRIPTION = "Open Web Translator local native host";
+const NATIVE_DESCRIPTION = "Folio local native host";
 
 export type BrowserTarget = "chrome" | "edge" | "all";
 
@@ -36,7 +36,7 @@ export interface InstallOptions {
   manifestDir?: string;
   /** Directory containing dist/host/main.cjs. */
   projectRoot?: string;
-  /** Program files live here. Defaults to ~/.local/share/open-web-translator. */
+  /** Program files live here. Defaults to ~/.local/share/folio. */
   installRoot?: string;
   /** Credentials and settings live here and are never removed by uninstall. */
   dataDir?: string;
@@ -149,7 +149,7 @@ export function resolveInstallLayout(options: InstallOptions = {}): InstallLayou
   const projectRoot = path.resolve(options.projectRoot ?? currentProjectRoot());
   const installRoot = requireAbsolute(
     "installRoot",
-    options.installRoot ?? path.join(home, ".local/share/open-web-translator"),
+    options.installRoot ?? path.join(home, ".local/share/folio"),
   );
   const dataDir = requireAbsolute("dataDir", options.dataDir ?? path.join(installRoot, "data"));
   const nodePath = requireAbsolute("Node 可执行文件", options.nodePath ?? process.execPath);
@@ -231,7 +231,7 @@ function wrapperContents(layout: InstallLayout): string {
   return [
     "#!/bin/sh",
     `# ${MANAGED_MARKER}`,
-    `export OPEN_WEB_TRANSLATOR_DATA_DIR=${shellQuote(layout.dataDir)}`,
+    `export FOLIO_DATA_DIR=${shellQuote(layout.dataDir)}`,
     `exec ${shellQuote(layout.nodePath)} ${shellQuote(layout.installedBundle)} "$@"`,
     "",
   ].join("\n");

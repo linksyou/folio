@@ -14,12 +14,12 @@ import type { NativeProgress, Translation } from "../shared/protocol.js";
 
 // Native Messaging supplies the calling extension origin. No general-purpose HTTP server.
 if (process.argv[2] !== `chrome-extension://${EXTENSION_ID}/`) {
-  process.stderr.write("This program must be launched by Open Web Translator.\n");
+  process.stderr.write("This program must be launched by Folio.\n");
   process.exit(1);
 }
 
-const directory = process.env.OPEN_WEB_TRANSLATOR_DATA_DIR ??
-  join(homedir(), ".local", "share", "open-web-translator", "data");
+const directory = process.env.FOLIO_DATA_DIR ??
+  join(homedir(), ".local", "share", "folio", "data");
 const http = createHttpTransport();
 const auth = new ChatGPTAuth({ dataDir: directory, fetch: http.fetch });
 const service = new HostService(

@@ -1,6 +1,6 @@
 /** Wire types shared by the extension and the local host. No credentials in replies. */
 import type { TargetLanguage, DisplayMode } from "./languages.js";
-export const HOST_NAME = "org.open_web_translator.host";
+export const HOST_NAME = "org.folio.host";
 export const PROTOCOL_VERSION = 1;
 /** Bump when translation instructions or placeholder semantics change. */
 export const TRANSLATION_PROMPT_VERSION = "1";

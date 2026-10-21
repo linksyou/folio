@@ -47,20 +47,20 @@ export function normalizeTranslationStyle(value: unknown): TranslationStyle {
 /** Selector is a fixed application-owned selector, never a value read from storage. */
 export function translationStyleCss(
   value: TranslationStyle,
-  selector = '.open-web-translator-translation[data-open-web-translator="translation"]',
+  selector = '.folio-translation[data-folio="translation"]',
 ): string {
   const style = normalizeTranslationStyle(value);
   const decoration: Record<TranslationStyle["preset"], string> = {
-    border: "padding-inline-start: .7em; border-inline-start: 2px solid var(--owt-accent);",
-    background: "padding: .55em .75em; border-radius: .4em; background-color: var(--owt-background);",
-    underline: "text-decoration: underline; text-decoration-color: var(--owt-accent); text-decoration-thickness: 1px; text-underline-offset: .22em;",
+    border: "padding-inline-start: .7em; border-inline-start: 2px solid var(--folio-accent);",
+    background: "padding: .55em .75em; border-radius: .4em; background-color: var(--folio-background);",
+    underline: "text-decoration: underline; text-decoration-color: var(--folio-accent); text-decoration-thickness: 1px; text-underline-offset: .22em;",
     plain: "color: inherit;",
   };
   return `
     ${selector} {
-      --owt-accent: #5e9b7b;
-      --owt-text: ${style.textColor ?? DEFAULT_TRANSLATION_COLORS.light.textColor};
-      --owt-background: ${style.backgroundColor ?? DEFAULT_TRANSLATION_COLORS.light.backgroundColor};
+      --folio-accent: #5e9b7b;
+      --folio-text: ${style.textColor ?? DEFAULT_TRANSLATION_COLORS.light.textColor};
+      --folio-background: ${style.backgroundColor ?? DEFAULT_TRANSLATION_COLORS.light.backgroundColor};
       box-sizing: border-box;
       display: block;
       margin-block: .35em .8em;
@@ -68,7 +68,7 @@ export function translationStyleCss(
       border: 0;
       border-radius: 0;
       background: transparent;
-      color: var(--owt-text);
+      color: var(--folio-text);
       font: inherit;
       font-size: ${Math.round(style.fontScale * 100)}%;
       line-height: inherit;
@@ -76,15 +76,15 @@ export function translationStyleCss(
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       ${decoration[style.preset]}
-      ${style.backgroundColor ? "background-color: var(--owt-background); padding: .55em .75em; border-radius: .4em;" : ""}
-      ${style.textColor ? "color: var(--owt-text);" : ""}
+      ${style.backgroundColor ? "background-color: var(--folio-background); padding: .55em .75em; border-radius: .4em;" : ""}
+      ${style.textColor ? "color: var(--folio-text);" : ""}
     }
     ${selector}[aria-busy="true"] { opacity: .8; }
     @media (prefers-color-scheme: dark) {
       ${selector} {
-        --owt-accent: #64a982;
-        --owt-text: ${style.textColor ?? DEFAULT_TRANSLATION_COLORS.dark.textColor};
-        --owt-background: ${style.backgroundColor ?? DEFAULT_TRANSLATION_COLORS.dark.backgroundColor};
+        --folio-accent: #64a982;
+        --folio-text: ${style.textColor ?? DEFAULT_TRANSLATION_COLORS.dark.textColor};
+        --folio-background: ${style.backgroundColor ?? DEFAULT_TRANSLATION_COLORS.dark.backgroundColor};
       }
     }
   `;

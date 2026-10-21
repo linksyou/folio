@@ -1,6 +1,6 @@
 # Agent 说明
 
-本仓库包含 Open Web Translator 的扩展、本地辅助程序和必要构建脚本。先阅读 README.md，按用户请求安装或修改；默认用中文交流。
+本仓库包含 Folio 的扩展、本地辅助程序和必要构建脚本。先阅读 README.md，按用户请求安装或修改；默认用中文交流。
 
 ## 帮用户安装
 
@@ -14,7 +14,7 @@
 ## 更新与卸载
 
 - 更新前检查本地改动；工作区干净且用户要求更新时，使用 `git pull --ff-only`，再运行安装流程。提醒用户重新加载扩展并刷新网页。若 Node.js 路径改变，重新安装 Host。
-- 卸载使用 `npm run uninstall:host -- --browser chrome`（或 `edge` / `all`）。用户数据默认保留，不自动删除 `~/.local/share/open-web-translator/data/`。
+- 卸载使用 `npm run uninstall:host -- --browser chrome`（或 `edge` / `all`）。用户数据默认保留，不自动删除 `~/.local/share/folio/data/`。
 
 ## 维护源码
 

@@ -1,7 +1,7 @@
 import { AppError } from "../shared/errors.js";
 
 const KEY = "autoTranslateOrigins";
-const PREFIX = "owt-site-";
+const PREFIX = "folio-site-";
 let updates: Promise<unknown> = Promise.resolve();
 
 export interface SiteStatus {
