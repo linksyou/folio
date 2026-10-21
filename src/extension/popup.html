@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>网页翻译</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/icon-32.png" />
+    <link rel="stylesheet" href="./ui.css" />
+  </head>
+  <body class="popup-page">
+    <main class="panel">
+      <header class="panel-header">
+        <h1 class="brand-title">
+          <img class="brand-icon" src="./icons/icon-128.png" width="34" height="34" alt="" />
+          <span>网页翻译</span>
+        </h1>
+        <button id="open-options" class="icon-button" type="button" aria-label="打开翻译设置" title="打开设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.6 2.3-2 .9-2.1-.6-2 3.4 1.6 1.8V13l-1.6 1.8 2 3.4 2.1-.5 2 .9.6 2.4h4.1l.6-2.4 2-.9 2.1.5 2-3.4-1.6-1.8v-2.2l1.6-1.8-2-3.4-2.1.6-2-.9-.6-2.3z"/><circle cx="11.5" cy="12" r="3"/></svg>
+        </button>
+      </header>
+
+      <section class="popup-translation" aria-label="当前页面翻译">
+        <section class="status-card" aria-live="polite">
+          <p id="status-message">正在读取页面状态…</p>
+          <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+          <p id="progress-text" class="muted">0 / 0 段</p>
+        </section>
+        <button id="start" class="primary full" type="button">翻译正文</button>
+        <div class="actions">
+          <button id="stop" type="button" title="停止当前页翻译，不改变网站自动翻译设置" disabled>停止</button>
+          <button id="retry" type="button" hidden disabled>重试失败</button>
+          <button id="restore" type="button" disabled>恢复原文</button>
+        </div>
+      </section>
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <section class="site-card" aria-label="网站自动翻译">
+        <label class="site-toggle" for="auto-translate">
+          <span>此网站自动翻译</span>
+          <input id="auto-translate" class="switch" type="checkbox" role="switch" disabled aria-describedby="site-summary site-help" />
+        </label>
+        <p id="site-summary" class="muted">正在读取网站…</p>
+        <p id="site-help" class="muted">授权后新页与刷新自动翻译，关闭即撤销权限。</p>
+      </section>
+
+      <footer class="popup-footer">
+        <div class="connection-line"><span class="connection-mark" aria-hidden="true"></span><p id="connection-summary" class="muted">正在读取连接…</p></div>
+        <details class="popup-more">
+          <summary>更多</summary>
+          <p id="connection-preparation" class="muted" aria-live="polite" hidden></p>
+          <p id="usage-row" class="muted" hidden>ChatGPT 计划 · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">管理用量</a></p>
+          <button id="export-diagnostics" class="text-button" type="button">导出性能记录</button>
+          <p class="muted shortcut-hint"><kbd>Alt</kbd> + <kbd>A</kbd> 翻译 <span>·</span> <kbd>Alt</kbd> + <kbd>R</kbd> 恢复原文</p>
+        </details>
+      </footer>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

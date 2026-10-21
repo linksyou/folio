@@ -1,0 +1,62 @@
+Mode: built-in image_gen edit
+
+01 湖蓝
+Use case: logo-brand / precise-object-edit.
+Edit the reference translation logo. Preserve EXACTLY the two flowing book-page silhouettes, their scale, positioning, and the graceful curved gap separating them.
+The user has now specified a PURE WHITE BACKGROUND and TWO CLOSELY RELATED BUT NOT IDENTICAL PAGE COLORS.
+Remove the colored rounded-square tile entirely. Make the ENTIRE square canvas a completely plain opaque pure white #FFFFFF field, including the central gap and all margins. No rounded-square boundary, no colored tile, no border, no shadow, no transparency.
+Color the LEFT page with the first specified color and the RIGHT page with the second specified color. The two pages should be clearly related in hue with a subtle but visible difference in depth, not identical, and not clashing. The colors should feel attractive, refined, modern, sufficiently vivid without fluorescent brightness.
+Flat solid uniform fills, crisply defined smooth contours, no gradients, no grain or texture. Absolutely no stray white patches or white decorative shapes inside the colored pages, no speckles, no highlights, no accidental marks. No text, no letters, no watermark, no additional symbol.
+Center the single open-book emblem with balanced white margins. Keep it sized approximately 64 percent of canvas width and 62 percent of canvas height, optically centered as in the original. Deliver ONE square icon image only, not a mockup or multiple variants. 
+Color specification: LEFT PAGE #3478D4; RIGHT PAGE #55A0E5. Entire background PURE WHITE #FFFFFF.
+
+02 靛蓝
+Use case: logo-brand / precise-object-edit.
+Edit the reference translation logo. Preserve EXACTLY the two flowing book-page silhouettes, their scale, positioning, and the graceful curved gap separating them.
+The user has now specified a PURE WHITE BACKGROUND and TWO CLOSELY RELATED BUT NOT IDENTICAL PAGE COLORS.
+Remove the colored rounded-square tile entirely. Make the ENTIRE square canvas a completely plain opaque pure white #FFFFFF field, including the central gap and all margins. No rounded-square boundary, no colored tile, no border, no shadow, no transparency.
+Color the LEFT page with the first specified color and the RIGHT page with the second specified color. The two pages should be clearly related in hue with a subtle but visible difference in depth, not identical, and not clashing. The colors should feel attractive, refined, modern, sufficiently vivid without fluorescent brightness.
+Flat solid uniform fills, crisply defined smooth contours, no gradients, no grain or texture. Absolutely no stray white patches or white decorative shapes inside the colored pages, no speckles, no highlights, no accidental marks. No text, no letters, no watermark, no additional symbol.
+Center the single open-book emblem with balanced white margins. Keep it sized approximately 64 percent of canvas width and 62 percent of canvas height, optically centered as in the original. Deliver ONE square icon image only, not a mockup or multiple variants. 
+Color specification: LEFT PAGE #4D58C8; RIGHT PAGE #7A82DF. Entire background PURE WHITE #FFFFFF.
+
+03 青碧
+Use case: logo-brand / precise-object-edit.
+Edit the reference translation logo. Preserve EXACTLY the two flowing book-page silhouettes, their scale, positioning, and the graceful curved gap separating them.
+The user has now specified a PURE WHITE BACKGROUND and TWO CLOSELY RELATED BUT NOT IDENTICAL PAGE COLORS.
+Remove the colored rounded-square tile entirely. Make the ENTIRE square canvas a completely plain opaque pure white #FFFFFF field, including the central gap and all margins. No rounded-square boundary, no colored tile, no border, no shadow, no transparency.
+Color the LEFT page with the first specified color and the RIGHT page with the second specified color. The two pages should be clearly related in hue with a subtle but visible difference in depth, not identical, and not clashing. The colors should feel attractive, refined, modern, sufficiently vivid without fluorescent brightness.
+Flat solid uniform fills, crisply defined smooth contours, no gradients, no grain or texture. Absolutely no stray white patches or white decorative shapes inside the colored pages, no speckles, no highlights, no accidental marks. No text, no letters, no watermark, no additional symbol.
+Center the single open-book emblem with balanced white margins. Keep it sized approximately 64 percent of canvas width and 62 percent of canvas height, optically centered as in the original. Deliver ONE square icon image only, not a mockup or multiple variants. 
+Color specification: LEFT PAGE #15999D; RIGHT PAGE #51BDC0. Entire background PURE WHITE #FFFFFF.
+
+04 杏橙
+Use case: logo-brand / precise-object-edit.
+Edit the reference translation logo. Preserve EXACTLY the two flowing book-page silhouettes, their scale, positioning, and the graceful curved gap separating them.
+The user has now specified a PURE WHITE BACKGROUND and TWO CLOSELY RELATED BUT NOT IDENTICAL PAGE COLORS.
+Remove the colored rounded-square tile entirely. Make the ENTIRE square canvas a completely plain opaque pure white #FFFFFF field, including the central gap and all margins. No rounded-square boundary, no colored tile, no border, no shadow, no transparency.
+Color the LEFT page with the first specified color and the RIGHT page with the second specified color. The two pages should be clearly related in hue with a subtle but visible difference in depth, not identical, and not clashing. The colors should feel attractive, refined, modern, sufficiently vivid without fluorescent brightness.
+Flat solid uniform fills, crisply defined smooth contours, no gradients, no grain or texture. Absolutely no stray white patches or white decorative shapes inside the colored pages, no speckles, no highlights, no accidental marks. No text, no letters, no watermark, no additional symbol.
+Center the single open-book emblem with balanced white margins. Keep it sized approximately 64 percent of canvas width and 62 percent of canvas height, optically centered as in the original. Deliver ONE square icon image only, not a mockup or multiple variants. 
+Color specification: LEFT PAGE #DF7846; RIGHT PAGE #EFA16D. Entire background PURE WHITE #FFFFFF.
+
+05 莓紫
+Use case: logo-brand / precise-object-edit.
+Edit the reference translation logo. Preserve EXACTLY the two flowing book-page silhouettes, their scale, positioning, and the graceful curved gap separating them.
+The user has now specified a PURE WHITE BACKGROUND and TWO CLOSELY RELATED BUT NOT IDENTICAL PAGE COLORS.
+Remove the colored rounded-square tile entirely. Make the ENTIRE square canvas a completely plain opaque pure white #FFFFFF field, including the central gap and all margins. No rounded-square boundary, no colored tile, no border, no shadow, no transparency.
+Color the LEFT page with the first specified color and the RIGHT page with the second specified color. The two pages should be clearly related in hue with a subtle but visible difference in depth, not identical, and not clashing. The colors should feel attractive, refined, modern, sufficiently vivid without fluorescent brightness.
+Flat solid uniform fills, crisply defined smooth contours, no gradients, no grain or texture. Absolutely no stray white patches or white decorative shapes inside the colored pages, no speckles, no highlights, no accidental marks. No text, no letters, no watermark, no additional symbol.
+Center the single open-book emblem with balanced white margins. Keep it sized approximately 64 percent of canvas width and 62 percent of canvas height, optically centered as in the original. Deliver ONE square icon image only, not a mockup or multiple variants. 
+Color specification: LEFT PAGE #925FC0; RIGHT PAGE #B181D3. Entire background PURE WHITE #FFFFFF.
+
+06 珊瑚
+Use case: logo-brand / precise-object-edit.
+Edit the reference translation logo. Preserve EXACTLY the two flowing book-page silhouettes, their scale, positioning, and the graceful curved gap separating them.
+The user has now specified a PURE WHITE BACKGROUND and TWO CLOSELY RELATED BUT NOT IDENTICAL PAGE COLORS.
+Remove the colored rounded-square tile entirely. Make the ENTIRE square canvas a completely plain opaque pure white #FFFFFF field, including the central gap and all margins. No rounded-square boundary, no colored tile, no border, no shadow, no transparency.
+Color the LEFT page with the first specified color and the RIGHT page with the second specified color. The two pages should be clearly related in hue with a subtle but visible difference in depth, not identical, and not clashing. The colors should feel attractive, refined, modern, sufficiently vivid without fluorescent brightness.
+Flat solid uniform fills, crisply defined smooth contours, no gradients, no grain or texture. Absolutely no stray white patches or white decorative shapes inside the colored pages, no speckles, no highlights, no accidental marks. No text, no letters, no watermark, no additional symbol.
+Center the single open-book emblem with balanced white margins. Keep it sized approximately 64 percent of canvas width and 62 percent of canvas height, optically centered as in the original. Deliver ONE square icon image only, not a mockup or multiple variants. 
+Color specification: LEFT PAGE #D66A66; RIGHT PAGE #E99589. Entire background PURE WHITE #FFFFFF.
+

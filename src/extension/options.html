@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>网页翻译设置</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/icon-32.png" />
+    <link rel="stylesheet" href="./ui.css" />
+  </head>
+  <body class="options-page">
+    <a class="skip-link" href="#settings-main">跳到设置内容</a>
+    <div class="settings-layout">
+      <aside class="settings-sidebar" aria-label="设置导航">
+        <a class="sidebar-brand" href="#settings-main" aria-label="Open Web Translator 设置首页">
+          <img class="brand-icon" src="./icons/icon-128.png" width="44" height="44" alt="" />
+          <span>Open Web<span>Translator</span></span>
+        </a>
+        <nav class="settings-nav" aria-label="设置分类">
+          <a href="#connection-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-6 6v4m-6-9V8" /></svg><span>模型与语言</span></a>
+          <a href="#appearance-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 19 6-14h2l6 14M6 14h10m2-8 3 3-3 3" /></svg><span>阅读与显示</span></a>
+          <a href="#floating-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 9h18" /><rect x="13" y="12" width="5" height="5" rx="1.5" /></svg><span>悬浮工具</span></a>
+          <a href="#cache-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v13H4zM3 3h18v4H3zm6 8h6" /></svg><span>翻译缓存</span></a>
+        </nav>
+        <div class="sidebar-note"><span class="privacy-dot" aria-hidden="true"></span><span>设置保存在本机</span></div>
+      </aside>
+    <main id="settings-main" class="settings-shell" tabindex="-1">
+      <header class="settings-header">
+        <div>
+          <h1>设置</h1>
+        </div>
+        <span id="host-state" class="connection-pill pending" role="status">正在连接</span>
+      </header>
+      <p id="host-error" class="error" role="alert" hidden></p>
+      <div id="host-help" class="notice host-help" hidden>
+        <span>请按项目 README 安装本地辅助程序，再重新检测。</span>
+        <button id="retry-host" type="button">重新检测</button>
+      </div>
+      <p id="notice" class="notice" role="status" hidden></p>
+
+      <fieldset id="host-controls" class="host-controls" disabled>
+        <section id="connection-settings" class="settings-card connection-card" aria-labelledby="provider-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="provider-title">翻译服务</h2>
+            </div>
+            <span class="section-caption">正文只发送给所选服务</span>
+          </div>
+          <fieldset class="provider-tabs">
+            <legend class="sr-only">模型连接</legend>
+            <label>
+              <input type="radio" name="provider" value="chatgpt" checked />
+              <span>
+                <strong>ChatGPT</strong>
+                <small>使用你的账号与计划</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="provider" value="custom" />
+              <span>
+                <strong>自定义 API</strong>
+                <small>OpenAI 兼容接口</small>
+              </span>
+            </label>
+          </fieldset>
+        </section>
+
+        <section id="chatgpt-section" class="settings-card" aria-labelledby="chatgpt-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="chatgpt-title">账号与模型</h2>
+            </div>
+            <span id="plan-badge" class="badge" hidden>使用 ChatGPT 计划</span>
+          </div>
+          <div class="account-card">
+            <div class="account-copy">
+              <span class="account-dot" aria-hidden="true"></span>
+              <div>
+                <strong id="auth-summary">正在读取账号…</strong>
+                <span class="muted">登录信息只保存在本机</span>
+              </div>
+            </div>
+            <select id="profile" aria-label="ChatGPT 账号">
+              <option value="">等待连接</option>
+            </select>
+          </div>
+          <div class="button-row account-actions">
+            <button id="login" class="primary" type="button">Continue with ChatGPT</button>
+            <button id="login-new" type="button">登录其他账号</button>
+            <button id="cancel-login" type="button" hidden>取消登录</button>
+            <button id="logout" class="quiet" type="button">退出</button>
+            <a id="usage-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer" hidden>管理用量</a>
+          </div>
+          <div class="model-grid">
+            <label class="field prominent-field">
+              <span>翻译模型</span>
+              <select id="chatgpt-model">
+                <option value="">等待登录</option>
+              </select>
+            </label>
+            <label class="field prominent-field">
+              <span>思考强度</span>
+              <select id="chatgpt-reasoning">
+                <option value="auto">自动 · 速度优先</option>
+              </select>
+            </label>
+          </div>
+          <div class="model-meta">
+            <p id="model-status" class="muted" role="status">登录后读取可用模型。</p>
+            <button id="refresh-models" class="text-button" type="button">刷新模型</button>
+          </div>
+        </section>
+
+        <section id="custom-section" class="settings-card" aria-labelledby="custom-title" hidden>
+          <div class="section-heading">
+            <div>
+              <h2 id="custom-title">API 与模型</h2>
+            </div>
+            <span class="badge neutral">凭证保存在本机</span>
+          </div>
+          <label class="field">
+            <span>API 基础地址</span>
+            <input id="custom-base-url" type="url" autocomplete="url" placeholder="https://example.com/v1" />
+          </label>
+          <p class="endpoint-preview muted">实际请求：<code id="custom-endpoint">请先填写基础地址</code></p>
+          <label class="field">
+            <span>API Key</span>
+            <input id="api-key" type="password" autocomplete="off" placeholder="输入新 Key" />
+          </label>
+          <div class="key-row">
+            <span id="key-summary" class="muted"></span>
+            <button id="clear-key" class="text-button danger-text" type="button">清除已保存 Key</button>
+          </div>
+          <div class="model-grid">
+            <label class="field prominent-field">
+              <span>模型 ID</span>
+              <input id="custom-model" type="text" autocomplete="off" placeholder="例如 gpt-5-mini" />
+            </label>
+            <label class="field prominent-field">
+              <span>思考强度</span>
+              <select id="custom-reasoning">
+                <option value="auto">自动 · 速度优先</option>
+                <option value="none">无</option>
+                <option value="minimal">极低</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+                <option value="xhigh">极高</option>
+                <option value="max">最大</option>
+                <option value="ultra">超高</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted compatibility-note">自动不发送强度参数；手动选择需接口与模型支持。</p>
+        </section>
+
+        <section class="settings-card" aria-labelledby="reading-title">
+          <div class="section-heading"><div><h2 id="reading-title">翻译语言</h2></div></div>
+          <div class="model-grid">
+            <label class="field prominent-field"><span>翻译为</span><select id="target-language"></select></label>
+          </div>
+        </section>
+
+        <div class="footer-actions">
+          <div>
+            <strong>模型与语言保存后用于新任务</strong>
+            <span class="muted">测试会发送一条短句，消耗模型用量。</span>
+          </div>
+          <div class="button-row">
+            <button id="test" type="button">保存并测试</button>
+            <button id="save" class="primary" type="button">保存设置</button>
+          </div>
+        </div>
+      </fieldset>
+
+      <section id="appearance-settings" class="settings-card translation-style-card" aria-labelledby="translation-style-title">
+        <div class="section-heading">
+          <div><h2 id="translation-style-title">阅读与显示</h2></div>
+          <button id="translation-style-reset" class="text-button" type="button">恢复默认</button>
+        </div>
+        <p class="muted section-intro">修改自动保存，并同步到已翻译页面。</p>
+        <label class="field prominent-field"><span>显示方式</span><select id="display-mode"><option value="bilingual">双语对照</option><option value="translation-only">仅显示译文</option></select></label>
+        <p class="muted field-help">仅译文模式下，译文完成后隐藏对应原文，恢复原文时还原。含链接、交互控件或嵌套结构的段落保留双语。</p>
+        <p id="display-mode-status" class="muted setting-status" role="status" aria-live="polite">正在读取显示方式…</p>
+        <div class="appearance-divider"></div>
+        <div class="model-grid">
+          <label class="field prominent-field"><span>装饰样式</span><select id="translation-style-preset"></select></label>
+          <label class="field prominent-field"><span>译文字号</span><select id="translation-font-scale" aria-describedby="translation-font-help"></select></label>
+        </div>
+        <p id="translation-font-help" class="sr-only">字号相对网页默认译文字号调整。</p>
+        <div class="model-grid translation-colors">
+          <div class="translation-color-field">
+            <label for="translation-text-color">译文颜色</label>
+            <div class="translation-color-control">
+              <input id="translation-text-color" type="color" aria-describedby="translation-text-color-value">
+              <span id="translation-text-color-value" class="translation-color-value"></span>
+              <button id="translation-text-color-reset" class="text-button" type="button" aria-label="恢复默认译文颜色">默认</button>
+            </div>
+          </div>
+          <div class="translation-color-field">
+            <label for="translation-background-color">背景颜色</label>
+            <div class="translation-color-control">
+              <input id="translation-background-color" type="color" aria-describedby="translation-background-color-value translation-colors-help">
+              <span id="translation-background-color-value" class="translation-color-value"></span>
+              <button id="translation-background-color-reset" class="text-button" type="button" aria-label="恢复默认背景颜色">默认</button>
+            </div>
+          </div>
+        </div>
+        <p id="translation-colors-help" class="muted translation-colors-help">默认仅“淡色背景”样式有底色；自定义颜色不随深浅色切换。</p>
+        <div class="translation-preview-card" aria-label="译文样式预览">
+          <span class="translation-preview-label"><span class="preview-dot" aria-hidden="true"></span>实时预览</span>
+          <p class="translation-preview-original" lang="en">Read at your own pace. A good translation makes the page feel familiar.</p>
+          <div id="translation-style-preview" lang="zh-CN">按照自己的节奏阅读。好的翻译，让网页读起来更亲切。</div>
+        </div>
+        <p id="translation-style-status" class="muted translation-style-status" role="status" aria-live="polite">正在读取样式…</p>
+      </section>
+      <section id="floating-settings" class="settings-card" aria-labelledby="floating-title">
+        <div class="section-heading"><div><h2 id="floating-title">网页悬浮工具</h2></div></div>
+        <label class="setting-toggle" for="floating-enabled">
+          <span><strong>显示悬浮工具</strong><span class="muted">点击翻译或恢复原文。</span></span>
+          <input id="floating-enabled" class="switch" type="checkbox" role="switch" checked disabled aria-describedby="floating-help" />
+        </label>
+        <p id="floating-help" class="muted field-help">仅在已开始翻译或已启用自动翻译的网页出现，可拖动调整位置。</p>
+        <p id="floating-status" class="muted setting-status" role="status" aria-live="polite">正在读取悬浮工具设置…</p>
+        <div class="keyboard-shortcuts" aria-label="快捷键">
+          <span>翻译页面 <span><kbd>Alt</kbd><span class="key-plus">+</span><kbd>A</kbd></span></span>
+          <span>恢复原文 <span><kbd>Alt</kbd><span class="key-plus">+</span><kbd>R</kbd></span></span>
+        </div>
+      </section>
+      <section id="cache-settings" class="settings-card" aria-labelledby="cache-title">
+        <div class="section-heading"><div><h2 id="cache-title">翻译缓存</h2></div></div>
+        <label class="cache-toggle setting-toggle"><span><strong>记住翻译结果</strong><span class="muted">刷新或再次访问时，优先使用已完成的译文。</span></span><input id="cache-enabled" class="switch" type="checkbox" role="switch" checked disabled></label>
+        <p id="cache-summary" class="muted">正在读取缓存…</p>
+        <p class="muted field-help">本机保存，最长保留 30 天。原文、语言或模型变化时重新翻译；“重新翻译”会忽略缓存。仅保存译文、网站与内容指纹，不保存原文或完整网址。译文可能含私人信息。</p>
+        <label class="field"><span>网站缓存</span><select id="cache-origin" disabled aria-label="选择要清除缓存的网站"></select></label>
+        <div class="button-row"><button id="cache-clear-site" type="button" disabled>清除此网站</button><button id="cache-clear-all" type="button" disabled>清除全部缓存</button></div>
+        <p id="cache-status" class="muted" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    </div>
+    <dialog id="plan-welcome">
+      <h2>已启用 ChatGPT 计划</h2>
+      <p>网页翻译会使用你的 ChatGPT 计划用量。你可以随时查看当前用量。</p>
+      <div class="button-row dialog-actions">
+        <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">管理用量</a>
+        <button id="ack-plan-welcome" class="primary" type="button">知道了</button>
+      </div>
+    </dialog>
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,3 @@
+// Public identity for stable unpacked installs. This is not a credential or a signing key.
+export const EXTENSION_ID = "knehndkhdnobjelidbommngmompbmfec";
+export const EXTENSION_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl6pPn/092wEQqGpXt9MhZeRaSXZtA8KNAawl+Z2iq1W3pnJZ6SHBDKQ7It2CQlyPH5bLqL8mE9jZxrf9O604okH3+3MARtvblQToJiCYCy/rzjOFKUzJAc4CYxTnkkNKCBtNXn1oijofA2WablM42D+xvgrs/6y14EgQ0Zl0ZUx7HaPNmGb8/LPVzfad1//0qEt7WxtSC5KIzJCh0SRYkWlZWRo07ZJ8ZcyrzANlKEOW0jq/OeSIMsBhruVBJCADBtEvmq6dqyoH36Z1dt5uAH2kWZ+BgXRxuyJq5okfIsk1ao9bdyaNKgpLXPY12hP2KHikkb2sd6LfQyGnYIiAxwIDAQAB";

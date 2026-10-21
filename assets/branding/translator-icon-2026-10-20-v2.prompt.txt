@@ -1,0 +1,12 @@
+Mode: built-in image_gen edit
+
+Use case: precise-object-edit / logo-brand.
+Edit the provided translation-extension icon. The user likes the underlying design but strongly dislikes its colors and wants absolutely no messy white patterns.
+PRESERVE the exact distinctive open-book / two flowing page silhouettes, their placement, scale, negative-space gap, and the rounded-square tile. Preserve actual transparency ONLY outside the tile.
+CHANGE THE PALETTE COMPLETELY to exactly TWO bold, contemporary flat colors:
+1. Entire rounded-square tile and the negative-space gap: uniform opaque electric ultramarine blue #4044ED.
+2. BOTH page shapes: the SAME uniform opaque vivid lemon yellow #E8FF59.
+Replace every ivory, cream, white, coral, orange and teal area with these two prescribed colors. There must be NO white or cream shapes anywhere, no white patches, no highlights, no visual noise, and no residual old colors. The page shapes should read as one confident yellow emblem divided by a clean blue curved gap. Clean up the outline to crisp vector-like precision.
+Pure flat fills. Absolutely no shading, no gradients, no texture, no dark smudges, no grain, no glow, no bevel, no shadow, no extra decoration, no lettering, no sparkle, no speckles. The blue tile interior must be fully opaque with no transparent pinholes. Modern, simple, strong contrast, attractive as a tiny browser toolbar icon.
+Deliver only the single revised icon, not a comparison board or mockup.
+

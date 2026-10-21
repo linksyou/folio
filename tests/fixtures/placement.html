@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Translation placement regression fixture</title>
+  <style>
+    body { max-width: 1040px; margin: 24px auto; padding: 0 20px; color: #172a38; background: #f5f7fa; font: 16px/1.5 system-ui; }
+    section { padding: 16px; margin-block: 16px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; }
+    .label { margin-bottom: 12px; color: #64748b; font-size: 13px; }
+    p { margin: 0 0 10px; }
+    h2 { margin: 0 0 10px; font: 700 26px/1.3 Georgia, serif; }
+    #flex { display: flex; gap: 18px; align-items: start; }
+    #flex > * { flex: 1 1 0; min-width: 0; }
+    #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #grid > * { min-width: 0; outline: 1px dotted #bac8d6; }
+    #residual { padding: 10px; border: 1px dashed #8ca0b8; }
+    #residual p { margin-block: 12px; }
+    ul { margin-block: 8px; }
+    table { border-collapse: collapse; margin-bottom: 18px; }
+    th, td { padding: 8px 16px; border: 1px solid #aab8c9; text-align: left; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <aside class="label">Flex: preserve the two original columns</aside>
+      <div id="flex"><h2 id="flex-title">Flexible layout title</h2><p id="flex-body">This paragraph belongs beside the title in the second column.</p></div>
+    </section>
+    <section>
+      <aside class="label">Grid: preserve the two original cells</aside>
+      <div id="grid"><h2 id="grid-title">Grid card title</h2><p id="grid-body">This is the body text intended for the second grid cell.</p></div>
+    </section>
+    <section>
+      <aside class="label">Residual text: keep introduction, child paragraph and conclusion separate</aside>
+      <div id="residual">Container introduction before child paragraph.<p id="inner-paragraph">This independent paragraph contains an <a id="original-link" href="#original-link">original link</a>.</p>Container conclusion after child paragraph.</div>
+    </section>
+    <section>
+      <aside class="label">Nested list: keep both parent ranges next to their own source</aside>
+      <ul id="outer-list"><li id="parent-item">Parent list introduction before its child list.<ul id="child-list"><li id="child-item">Nested child list paragraph.</li></ul>Parent list conclusion after its child list.</li></ul>
+    </section>
+    <section>
+      <aside class="label">Markdown-style table: translate within each cell</aside>
+      <div id="table-wrapper"><article id="table-article"><markdown-accessiblity-table><table id="metadata-table"><tbody><tr><th id="table-name">Name</th><td id="table-value">Example application</td></tr><tr><th id="table-description">Description</th><td id="table-summary">Public sample description</td></tr></tbody></table></markdown-accessiblity-table><h2 id="after-table-title">Details after the table</h2><p id="after-table-body">This ordinary paragraph belongs to the same article.</p></article></div>
+    </section>
+  </main>
+</body>
+</html>
