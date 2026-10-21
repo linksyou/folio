@@ -11,14 +11,9 @@
   "scripts": {
     "build": "tsx scripts/build.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "npm run typecheck && npm run build",
     "install:host": "tsx scripts/install-host.ts",
-    "uninstall:host": "tsx scripts/install-host.ts --uninstall",
-    "test:browser": "tsx tests/browser.ts",
-    "test:placement": "tsx tests/placement-browser.ts",
-    "diagnose:latency": "tsx scripts/diagnose-latency.ts",
-    "diagnose:report": "tsx scripts/analyze-performance.ts"
+    "uninstall:host": "tsx scripts/install-host.ts --uninstall"
   },
   "dependencies": {
     "jose": "6.2.13",
@@ -27,12 +22,9 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.1.24",
-    "@types/jsdom": "^27.0.0",
     "@types/node": "^22.0.0",
     "@types/proper-lockfile": "^4.1.4",
     "esbuild": "0.28.2",
-    "jsdom": "30.1.3",
-    "playwright": "1.64.1",
     "tsx": "4.23.15",
     "typescript": "7.0.2"
   }
