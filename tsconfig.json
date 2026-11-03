@@ -19,6 +19,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "tests/**/*.ts",
     "scripts/build.ts",
     "scripts/install-host.ts"
   ]

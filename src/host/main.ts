@@ -7,6 +7,7 @@ import { encodeMessage, MessageDecoder } from "./framing.js";
 import { ModelProviders } from "./providers.js";
 import { HostService } from "./service.js";
 import { createHttpTransport } from "./http.js";
+import { resolveProxySettings } from "./proxy.js";
 import { SettingsStore } from "./settings.js";
 import { createProgressCoalescer } from "./stream-translations.js";
 import { boundedString, record, validateCommand } from "../shared/validation.js";
@@ -20,7 +21,7 @@ if (process.argv[2] !== `chrome-extension://${EXTENSION_ID}/`) {
 
 const directory = process.env.FOLIO_DATA_DIR ??
   join(homedir(), ".local", "share", "folio", "data");
-const http = createHttpTransport();
+const http = createHttpTransport({ proxy: resolveProxySettings() });
 const auth = new ChatGPTAuth({ dataDir: directory, fetch: http.fetch });
 const service = new HostService(
   new SettingsStore(directory), auth, new ModelProviders(auth, http.fetch, undefined, http.prepare),
