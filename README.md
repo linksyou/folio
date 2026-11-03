@@ -22,6 +22,8 @@ Edge 用户将安装命令末尾的 `chrome` 改为 `edge`，并在 `edge://exte
 
 本地辅助程序由浏览器自动启动，日常使用不用开着终端。请保留项目文件夹和 Node.js，浏览器需要读取扩展目录。
 
+如需代理，本地辅助程序支持 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`（小写优先）。macOS 浏览器启动的辅助程序通常不继承终端环境变量；未设置 HTTP/HTTPS 代理变量时，会读取系统中启用的静态 HTTP/HTTPS 代理及绕过规则。修改代理设置后，请在扩展管理页重新加载 Folio。系统 PAC 自动代理和仅 SOCKS 配置暂不自动读取；可改用静态 HTTP/HTTPS 代理。HTTPS 证书校验始终保留。
+
 也可以把仓库地址交给 Agent：
 
 > 请阅读 https://github.com/linksyou/folio 仓库中的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Folio，并告诉我最后需要在浏览器中完成的操作。
@@ -54,3 +56,5 @@ npm run install:host -- --browser chrome
 `src/extension/` 是浏览器扩展，`src/host/` 是本地辅助程序，`src/shared/` 是共享协议，`scripts/` 包含构建和安装脚本。依赖由 `package.json` 和 `package-lock.json` 管理，通过 `npm ci` 安装。
 
 Agent 安装与维护说明见 [AGENTS.md](AGENTS.md)。代码采用 [MIT License](LICENSE)。
+
+网络代理与模型目录回归测试：`npm test`；类型检查和构建：`npm run check`。自动化测试使用本机模拟服务，不读取账号凭据或调用真实模型。

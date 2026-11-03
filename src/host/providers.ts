@@ -224,7 +224,21 @@ export class ModelProviders {
     return this.prepareConnection(new URL(base).origin, signal);
   }
 
-  async listModels(signal?: AbortSignal): Promise<Model[]> {
+  async listModels(callerSignal?: AbortSignal): Promise<Model[]> {
+    const signal = AbortSignal.any([callerSignal ?? new AbortController().signal, AbortSignal.timeout(30_000)]);
+    try {
+      signal.throwIfAborted();
+      return await this.fetchModels(signal);
+    } catch (error) {
+      if (callerSignal?.aborted) throw new AppError("CANCELLED", "模型目录读取已停止。");
+      if (signal.aborted) throw new AppError("TIMEOUT", "读取模型目录超时，请检查网络和代理设置后重试。");
+      if (error instanceof AppError) throw error;
+      // Never expose raw fetch/TLS errors, which can include URLs and credentials.
+      throw new AppError("NETWORK_ERROR", "无法连接模型服务，请检查网络、系统代理或 HTTPS_PROXY 设置后重试。");
+    }
+  }
+
+  private async fetchModels(signal: AbortSignal): Promise<Model[]> {
     const token = await this.auth.accessToken(signal);
     const cacheKey = this.tokenPartition(token);
     const cached = this.modelCache.get(cacheKey);
@@ -232,7 +246,7 @@ export class ModelProviders {
     const response = await this.fetcher(`${this.apiRoot}/models`, {
       headers: { Authorization: `Bearer ${token}` },
       redirect: "error",
-      signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(30_000)]),
+      signal,
     });
     await ensureSuccess(response);
     const body = await readJson(response);

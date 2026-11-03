@@ -1,7 +1,8 @@
-import { Agent } from "undici";
+import { Agent, EnvHttpProxyAgent, Pool, type Dispatcher } from "undici";
+import type { ProxySettings } from "./proxy.js";
 
 interface DispatcherRequestInit extends RequestInit {
-  dispatcher: Agent;
+  dispatcher: Dispatcher;
 }
 
 const PREPARE_TIMEOUT_MS = 8_000;
@@ -12,6 +13,8 @@ const MAX_CONNECTIONS = 2;
 export interface HttpTransportOptions {
   /** Foreground requests wait briefly for reuse, then supersede a slow probe. */
   foregroundPrepareWaitMs?: number;
+  /** Omit to use Undici's environment proxy settings. Native hosts also resolve OS settings. */
+  proxy?: ProxySettings;
 }
 
 interface Preparation {
@@ -76,26 +79,40 @@ export function createHttpTransport(options: HttpTransportOptions = {}): HttpTra
   if (!Number.isFinite(foregroundPrepareWaitMs) || foregroundPrepareWaitMs < 0) {
     throw new RangeError("foregroundPrepareWaitMs must be a finite non-negative number");
   }
-  const dispatcher = new Agent({
+  const connections = new Map<string, number>();
+  const poolOptions: Agent.Options = {
     connections: MAX_CONNECTIONS,
     allowH2: true,
     keepAliveTimeout: 60_000,
     keepAliveMaxTimeout: 60_000,
     // HTTP/2 sessions use PING rather than the HTTP/1 parser idle timeout.
     pingInterval: 60_000,
-  });
-  const connections = new Map<string, number>();
+    // EnvHttpProxyAgent does not forward connection events. Track the actual
+    // destination pools so preparation still sees reusable proxied connections.
+    factory(origin, options) {
+      const pool = new Pool(origin, options);
+      pool.on("connect", (url) => {
+        connections.set(url.origin, (connections.get(url.origin) ?? 0) + 1);
+      });
+      pool.on("disconnect", (url) => {
+        const count = (connections.get(url.origin) ?? 1) - 1;
+        if (count > 0) connections.set(url.origin, count);
+        else connections.delete(url.origin);
+      });
+      return pool;
+    },
+  };
+  const { bypass, ...proxyOptions } = options.proxy ?? {};
+  const proxyDispatcher = new EnvHttpProxyAgent({ ...poolOptions, ...proxyOptions });
+  const bypassDispatcher = bypass ? new Agent(poolOptions) : undefined;
+  // Select per dispatch, including redirects performed internally by fetch.
+  const dispatcher = bypass && bypassDispatcher
+    ? proxyDispatcher.compose((dispatch) => (request, handler) =>
+      request.origin && bypass(new URL(request.origin))
+        ? bypassDispatcher.dispatch(request, handler) : dispatch(request, handler))
+    : proxyDispatcher;
   const activeFetches = new Map<string, number>();
   const preparations = new Map<string, Preparation>();
-
-  dispatcher.on("connect", (origin) => {
-    connections.set(origin.origin, (connections.get(origin.origin) ?? 0) + 1);
-  });
-  dispatcher.on("disconnect", (origin) => {
-    const count = (connections.get(origin.origin) ?? 1) - 1;
-    if (count > 0) connections.set(origin.origin, count);
-    else connections.delete(origin.origin);
-  });
 
   const directFetch: typeof globalThis.fetch = (input, init) => {
     const requestInit: DispatcherRequestInit = { ...init, dispatcher };
@@ -190,7 +207,7 @@ export function createHttpTransport(options: HttpTransportOptions = {}): HttpTra
     fetch,
     prepare,
     async close(): Promise<void> {
-      await dispatcher.destroy();
+      await Promise.all([dispatcher.destroy(), bypassDispatcher?.destroy()]);
     },
   };
 }
