@@ -16,7 +16,11 @@ npm run check
 npm run install:host -- --browser chrome
 ```
 
-打开 `chrome://extensions`，开启「开发者模式」，点击「加载已解压的扩展程序」，选择项目中的 **`dist/extension`** 文件夹。
+然后在浏览器中完成加载：
+
+1. 打开 `chrome://extensions`，开启「开发者模式」。
+2. 点击「加载已解压的扩展程序」，选择项目中的 **`dist/extension`** 文件夹，不是项目根目录或 `dist`。如果已从该目录加载 Folio，点击「重新加载」即可。
+3. 打开 Folio 设置，确认页面显示「本地程序已连接」。若显示未连接，检查 Host 安装命令是否成功、浏览器参数是否正确，再点击「重新检测」。
 
 Edge 用户将安装命令末尾的 `chrome` 改为 `edge`，并在 `edge://extensions` 中加载。两个浏览器都使用时，改为 `all`。
 
@@ -24,9 +28,11 @@ Edge 用户将安装命令末尾的 `chrome` 改为 `edge`，并在 `edge://exte
 
 如需代理，本地辅助程序支持 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`（小写优先）。macOS 浏览器启动的辅助程序通常不继承终端环境变量；未设置 HTTP/HTTPS 代理变量时，会读取系统中启用的静态 HTTP/HTTPS 代理及绕过规则。修改代理设置后，请在扩展管理页重新加载 Folio。系统 PAC 自动代理和仅 SOCKS 配置暂不自动读取；可改用静态 HTTP/HTTPS 代理。HTTPS 证书校验始终保留。
 
-也可以把仓库地址交给 Agent：
+也可以把下面这段话交给具备终端和浏览器操作能力的 Agent：
 
-> 请阅读 https://github.com/linksyou/folio 仓库中的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Folio，并告诉我最后需要在浏览器中完成的操作。
+> 请阅读 https://github.com/linksyou/folio 仓库中的 README.md 和 AGENTS.md，检查本机环境，帮我安装 Folio，并完成需要在浏览器中完成的操作。
+
+Agent 应继续完成扩展加载和本地程序连接检查。若工具无法操作扩展管理页或系统文件选择器，应说明限制，并给出需要接手的具体步骤和扩展目录的绝对路径。ChatGPT 登录或 API Key 填写由你在设置页亲自完成；安装与连接检查不代表已经验证实际翻译。
 
 ## 使用
 
