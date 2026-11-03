@@ -9,6 +9,7 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "test": "tsx --test tests/*.test.ts",
     "build": "tsx scripts/build.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run build",
