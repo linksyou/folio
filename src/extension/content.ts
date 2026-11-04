@@ -130,7 +130,8 @@ if (!contentGlobal.__folioInstalled) {
         bounds.width > 0 && bounds.height > 0 && bounds.top < innerHeight && bounds.bottom > 0;
     });
     if (!visible) return;
-    timings.mark("ui.firstVisible", { jobId: click.jobId }, { clickToVisibleMs: Math.max(0, Date.now() - click.at) });
+    const elapsed = Date.now() - click.at;
+    timings.mark("ui.firstVisible", { jobId: click.jobId }, { clickToVisibleMs: elapsed, clockValid: elapsed >= 0 });
     click = undefined;
   };
   const progressListeners = new Map<string, {
@@ -295,7 +296,8 @@ if (!contentGlobal.__folioInstalled) {
         before: new Map(Array.from(document.querySelectorAll('[data-folio="translation"]'), (node) => [node, node.textContent])),
       } : undefined;
       if (click) timings.mark("ui.commandReceived", { jobId: click.jobId }, {
-        clickToCommandMs: Math.max(0, Date.now() - click.at),
+        clickToCommandMs: Date.now() - click.at,
+        clockValid: Date.now() >= click.at,
       });
     } else if (command.action === "stop" || command.action === "restore") {
       continuing = false;

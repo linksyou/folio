@@ -4,7 +4,7 @@ import { PROTOCOL_VERSION, type AuthStatus, type HostCommand, type HostStatus, t
 import { ChatGPTAuth } from "./auth/index.js";
 import { ModelProviders } from "./providers.js";
 import { RequestQueue } from "./queue.js";
-import { publicSettings, SettingsStore } from "./settings.js";
+import { publicSettings, SettingsStore, type Settings } from "./settings.js";
 import { TimingLog } from "../shared/diagnostics.js";
 
 /** Owns one browser connection. Network work is bounded across all its tabs. */
@@ -39,13 +39,18 @@ export class HostService {
   }
 
   async status(signal?: AbortSignal): Promise<HostStatus> {
+    return (await this.readSnapshot(signal)).status;
+  }
+
+  private async readSnapshot(signal?: AbortSignal): Promise<{ settings: Settings; status: HostStatus }> {
     // A status may be used immediately as a translation identity. Never expose
     // the file's new revision before its old jobs have been invalidated.
     for (;;) {
       const writes = this.settingsWrites;
       await this.waitForWrite(writes, signal);
       const [settings, auth] = await Promise.all([this.settings.read(), this.auth.status()]);
-      if (writes === this.settingsWrites) return this.makeStatus(settings, auth);
+      signal?.throwIfAborted();
+      if (writes === this.settingsWrites) return { settings, status: this.makeStatus(settings, auth) };
     }
   }
 
@@ -170,12 +175,15 @@ export class HostService {
         try {
           return await this.queue.run(signal, async () => {
             this.timings.mark("queue.leave", identity, { waitMs: performance.now() - started });
-            await this.waitForSettingsWrites(signal);
-            const settings = await this.settings.read();
-            const auth = await this.auth.status();
-            const status = this.makeStatus(settings, auth);
-            if (status.settingsRevision !== command.settingsRevision ||
-                (await this.status(signal)).settingsRevision !== command.settingsRevision) {
+            // The two files can change independently in another Host process.
+            // A slow auth read may outlive the settings read (or vice versa), so
+            // retain a second identity check before dispatching any model work.
+            const initial = await this.readSnapshot(signal);
+            if (initial.status.settingsRevision !== command.settingsRevision) {
+              throw new AppError("CONFIG_REQUIRED", "账号或配置已变化，请重新开始翻译。");
+            }
+            const { settings, status } = await this.readSnapshot(signal);
+            if (status.settingsRevision !== command.settingsRevision) {
               throw new AppError("CONFIG_REQUIRED", "账号或配置已变化，请重新开始翻译。");
             }
             signal.throwIfAborted();

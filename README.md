@@ -63,4 +63,6 @@ npm run install:host -- --browser chrome
 
 Agent 安装与维护说明见 [AGENTS.md](AGENTS.md)。代码采用 [MIT License](LICENSE)。
 
-网络代理与模型目录回归测试：`npm test`；类型检查和构建：`npm run check`。自动化测试使用本机模拟服务，不读取账号凭据或调用真实模型。
+自动化回归测试：`npm test`；类型检查和构建：`npm run check`。正文、流式显示、取消和缓存的独立浏览器测试：`npm run test:browser`（首次运行需 `npx playwright install chromium`，或设置 `FOLIO_BROWSER_CHANNEL=chrome` 使用本机 Chrome 的隔离测试实例）。自动化测试使用模拟服务，不读取账号凭据或调用真实模型。
+
+速度基线与诊断汇总见 [性能验证说明](docs/PERFORMANCE.md)：`npm run benchmark:status` 测隔离状态查询，`npm run benchmark:browser` 测固定页面的首段、首屏、滚动和整页耗时。P0 的修改与本机验证结果见 [P0 验证记录](docs/P0-VALIDATION.md)。

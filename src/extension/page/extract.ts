@@ -13,7 +13,7 @@ const OMITTED_TEXT_SELECTOR = [
 const NON_CONTENT_SELECTOR = `${OMITTED_TEXT_SELECTOR}, code`;
 const BOUNDARY_SELECTOR = [
   SEMANTIC_SELECTOR, "div", "ul", "ol", "table", "thead", "tbody", "tfoot", "tr",
-  "caption", "main", "article", "section", "header", "blockquote", "dl", "br", "hr",
+  "caption", "figcaption", "main", "article", "section", "header", "blockquote", "dl", "br", "hr",
 ].join(", ");
 const INTERACTIVE_SELECTOR = "a, button, input, textarea, select, [tabindex], [contenteditable], [role~='button']";
 // Prioritize only a substantial, dominant article. This never changes extraction
@@ -60,6 +60,7 @@ function createReader(document: Document) {
       && computed?.visibility !== "hidden"
       && computed?.visibility !== "collapse"
       && computed?.contentVisibility !== "hidden"
+      && Number.parseFloat(computed?.opacity ?? "") !== 0
       && (!element.parentElement || visible(element.parentElement));
     visibility.set(element, result);
     return result;
@@ -79,14 +80,22 @@ function createReader(document: Document) {
     boundaries.set(element, result);
     return result;
   };
-  const text = (node: Node): string => {
+  const text = (node: Node, excludeCode = false): string => {
     if (node.nodeType === node.TEXT_NODE) return node.textContent ?? "";
     if (node.nodeType !== node.ELEMENT_NODE) return "";
     const element = node as Element;
-    if (element.matches(OMITTED_TEXT_SELECTOR) || !visible(element)) return "";
-    return Array.from(element.childNodes).map(text).join("");
+    if (element.matches(OMITTED_TEXT_SELECTOR) || (excludeCode && element.matches("code")) || !visible(element)) return "";
+    return Array.from(element.childNodes).map((child) => text(child, excludeCode)).join("");
   };
-  return { visible, boundary, containsBoundary, text };
+  const headingStyle = (element: Element): boolean => {
+    const computed = style(element);
+    const size = Number.parseFloat(computed?.fontSize ?? "");
+    const parentSize = Number.parseFloat(element.parentElement ? style(element.parentElement)?.fontSize ?? "" : "");
+    return Number.parseInt(computed?.fontWeight ?? "", 10) >= 600
+      || computed?.fontWeight === "bold"
+      || (Number.isFinite(parentSize) && size >= parentSize * 1.2);
+  };
+  return { visible, boundary, containsBoundary, text, headingStyle };
 }
 
 type Reader = ReturnType<typeof createReader>;
@@ -109,7 +118,7 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
   const flush = () => {
     while (nodes.length && !normalize(reader.text(nodes[0]))) nodes.shift();
     while (nodes.length && !normalize(reader.text(nodes[nodes.length - 1]))) nodes.pop();
-    const source = normalize(nodes.map(reader.text).join(""));
+    const source = normalize(nodes.map((node) => reader.text(node)).join(""));
     if (source && eligible(element, nodes, source, reader)) ranges.push({
       element, nodes, source,
       before: adjacentOriginal(nodes[0], "previousSibling"),
@@ -137,9 +146,10 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
 }
 
 function eligible(element: HTMLElement, nodes: Node[], source: string, reader: Reader): boolean {
-  // A styled inline wrapper may own a short run inside a semantic paragraph.
-  if (element.matches(SEMANTIC_SELECTOR) || element.parentElement?.closest(SEMANTIC_SELECTOR)) return true;
-  if (element.tagName !== "DIV" || source.length < 24) return false;
+  // Inline code stays attached to surrounding prose, but code-only ranges and
+  // numeric/UI punctuation alone are not translation candidates.
+  const prose = normalize(nodes.map((node) => reader.text(node, true)).join(""));
+  if (!/\p{L}/u.test(prose)) return false;
   const links: Element[] = [];
   for (const node of nodes) {
     if (node.nodeType !== node.ELEMENT_NODE) continue;
@@ -147,8 +157,27 @@ function eligible(element: HTMLElement, nodes: Node[], source: string, reader: R
     if (child.matches("a")) links.push(child);
     links.push(...child.querySelectorAll("a"));
   }
-  const linkedText = links.map(reader.text).join("").replace(/\s+/g, "");
-  return linkedText.length < source.replace(/\s+/g, "").length * 0.8;
+  const heading = !!element.closest(HEADING_SELECTOR);
+  const linkTexts = links.map((link) => normalize(reader.text(link))).filter(Boolean);
+  const linkedText = element.closest("a") ? source : linkTexts.join("");
+  const linkDensity = linkedText.replace(/\s+/g, "").length / source.replace(/\s+/g, "").length;
+  // Apply the same menu check to p/li and generic blocks. A single linked title
+  // is still useful article text, unlike a row of visible, nonempty navigation links.
+  if (linkDensity >= 0.8 && !(heading && linkTexts.length <= 1)) return false;
+
+  // A styled inline wrapper may own a short run inside a semantic paragraph.
+  if (element.matches(SEMANTIC_SELECTOR) || element.parentElement?.closest(SEMANTIC_SELECTOR)
+    || element.matches("figcaption, caption")) return true;
+  if (!reader.boundary(element)) return false;
+  if (prose.length >= 24) return true;
+
+  const letters = prose.match(/\p{L}/gu) ?? [];
+  const words = prose.match(/\p{L}+/gu) ?? [];
+  const shortPhrase = letters.length >= 4 && (words.length >= 2 || /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(prose));
+  // Short generic labels need an explicit content/title signal. This avoids
+  // turning every unmarked toolbar label into a paragraph.
+  return (letters.length >= 2 && reader.headingStyle(element))
+    || (shortPhrase && !!element.closest(CONTENT_ROOT_SELECTOR));
 }
 
 export function sameRange(left: SourceRange, right: SourceRange): boolean {
@@ -260,22 +289,34 @@ export function collectRanges(document: Document): SourceRange[] {
   const reader = createReader(document);
   const mains = Array.from(document.querySelectorAll<HTMLElement>(MAIN_SELECTOR))
     .filter((element) => reader.visible(element) && !element.closest(NON_CONTENT_SELECTOR));
-  const articles = mains.length ? [] : Array.from(document.querySelectorAll<HTMLElement>("article"))
-    .filter((element) => reader.visible(element) && !element.closest(NON_CONTENT_SELECTOR));
-  const roots = outermost(mains.length ? mains : articles.length ? articles : [document.body]);
-  const externalTitles = roots.flatMap((root) => precedingHeadings(root));
-  const allowedHeaders = new Set(externalTitles.map((heading) => heading.closest("header")));
-  const ranges: SourceRange[] = [];
-  const visit = (element: HTMLElement): void => {
-    if (element.closest(NON_CONTENT_SELECTOR) || !reader.visible(element)) return;
-    if (element.tagName === "HEADER" && !element.closest(CONTENT_ROOT_SELECTOR) && !allowedHeaders.has(element)) return;
-    ranges.push(...directRanges(element, reader));
-    for (const child of element.children) {
-      // Atomic inline nodes were already included in their parent's range.
-      if (reader.boundary(child) || reader.containsBoundary(child)) visit(child as HTMLElement);
-    }
+  const collect = (roots: HTMLElement[]): SourceRange[] => {
+    const allowedHeaders = new Set(roots.map((root) => root.closest("header")));
+    const ranges: SourceRange[] = [];
+    const visit = (element: HTMLElement): void => {
+      if (element.closest(NON_CONTENT_SELECTOR) || !reader.visible(element)) return;
+      if (element.tagName === "HEADER" && !element.closest(CONTENT_ROOT_SELECTOR) && !allowedHeaders.has(element)) return;
+      ranges.push(...directRanges(element, reader));
+      for (const child of element.children) {
+        // Atomic inline nodes were already included in their parent's range.
+        if (reader.boundary(child) || reader.containsBoundary(child)) visit(child as HTMLElement);
+      }
+    };
+    for (const root of roots) visit(root);
+    return ranges;
   };
-  for (const root of outermost([...externalTitles, ...roots])) visit(root);
+  let roots = outermost(mains);
+  let ranges = collect(roots);
+  // A declared main/article is a scope hint, not proof that it contains text.
+  // Check its own candidates before adjacent titles can mask an empty root.
+  if (!ranges.length) {
+    roots = outermost(Array.from(document.querySelectorAll<HTMLElement>("article"))
+      .filter((element) => reader.visible(element) && !element.closest(NON_CONTENT_SELECTOR)));
+    ranges = collect(roots);
+  }
+  if (!ranges.length) { roots = [document.body]; ranges = collect(roots); }
+  const externalTitles = outermost(roots.flatMap((root) => precedingHeadings(root, reader)))
+    .filter((title) => !roots.some((root) => root.contains(title)));
+  ranges.push(...collect(externalTitles));
   assignReadingPriorities(ranges, roots, reader);
   return ranges.sort((left, right) => {
     const first = left.nodes[0];

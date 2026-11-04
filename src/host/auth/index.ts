@@ -95,7 +95,7 @@ export class ChatGPTAuth {
   }
 
   async status(): Promise<AuthStatus> {
-    return this.#store.withLock(async (state) => publicStatus(state));
+    return publicStatus(await this.#store.read());
   }
 
   async signIn(options: { newAccount?: boolean; signal?: AbortSignal } = {}): Promise<AuthStatus> {

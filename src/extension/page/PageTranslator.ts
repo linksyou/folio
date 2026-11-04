@@ -143,6 +143,7 @@ export class PageTranslator {
   private readonly reading = new ReadingCohort<PageBlock>(this.timings);
   private firstVisible = false;
   private runStarted = 0;
+  private initialPassEnded = true;
   private state: PageState = {
     status: "idle",
     total: 0,
@@ -187,6 +188,15 @@ export class PageTranslator {
   private disposed = false;
   private readonly onScroll = () => this.scheduleViewport(true);
   private readonly onViewportChange = () => this.scheduleViewport();
+  // CSS can reveal initially transparent prose without a DOM mutation.
+  private readonly onPresentationEnd = (event: Event) => {
+    const target = event.target as Element | null;
+    if (this.disposed || target?.nodeType !== 1
+      || target.closest(`[${GENERATED_ATTRIBUTE}], [data-folio-ui]`)) return;
+    if (event.type === "transitionend"
+      && !["opacity", "visibility", "display"].includes((event as TransitionEvent).propertyName)) return;
+    this.scheduleDiscovery();
+  };
   private readonly activeBatches = new Set<ActiveBatch>();
 
   constructor(
@@ -211,6 +221,8 @@ export class PageTranslator {
     // Capturing also observes scrolls inside an article's own scroll container.
     document.addEventListener("scroll", this.onScroll, { capture: true, passive: true });
     document.addEventListener("visibilitychange", this.onViewportChange);
+    document.addEventListener("animationend", this.onPresentationEnd, true);
+    document.addEventListener("transitionend", this.onPresentationEnd, true);
     document.defaultView?.addEventListener("resize", this.onViewportChange, { passive: true });
   }
 
@@ -228,6 +240,8 @@ export class PageTranslator {
     this.observer?.disconnect();
     this.document.removeEventListener("scroll", this.onScroll, true);
     this.document.removeEventListener("visibilitychange", this.onViewportChange);
+    this.document.removeEventListener("animationend", this.onPresentationEnd, true);
+    this.document.removeEventListener("transitionend", this.onPresentationEnd, true);
     this.document.defaultView?.removeEventListener("resize", this.onViewportChange);
     void this.stop();
   }
@@ -283,6 +297,7 @@ export class PageTranslator {
   }
 
   private beginStart(jobId: string, settingsRevision: string, force = false): PageState {
+    this.endInitialPass("stopped");
     this.reading.end();
     this.scrollScheduled = false;
     void this.cancelCurrent();
@@ -295,6 +310,7 @@ export class PageTranslator {
     this.settingsRevision = settingsRevision;
     this.runUrl = this.currentUrl();
     this.runStarted = performance.now();
+    this.initialPassEnded = false;
     this.firstVisible = false;
     this.timings.mark("session.start", { jobId });
     this.blocks = this.extractBlocks(settingsRevision);
@@ -947,6 +963,7 @@ export class PageTranslator {
   }
 
   private async stop(): Promise<void> {
+    this.endInitialPass("stopped");
     const oldJob = this.jobId;
     this.reading.end();
     this.generation += 1;
@@ -958,6 +975,7 @@ export class PageTranslator {
   }
 
   private async restore(): Promise<void> {
+    this.endInitialPass("stopped");
     const oldJob = this.jobId;
     this.reading.end();
     this.generation += 1;
@@ -990,6 +1008,7 @@ export class PageTranslator {
   private invalidateIfPageChanged(): void {
     if (this.disposed) return;
     if (!this.runUrl || this.currentUrl() === this.runUrl || this.state.status === "idle") return;
+    this.endInitialPass("stopped");
     const oldJob = this.jobId;
     this.reading.end();
     this.generation += 1;
@@ -1112,7 +1131,25 @@ export class PageTranslator {
     this.refreshState(this.state.status);
   }
 
+  /** First settled pass, not a promise that a dynamic document will never grow. */
+  private endInitialPass(status: PageState["status"]): void {
+    if (this.initialPassEnded || !this.jobId || !["completed", "paused", "error", "stopped"].includes(status)) return;
+    // An empty enabled SPA is still waiting for content, not an instant success.
+    if (status === "completed" && this.blocks.length === 0) return;
+    this.initialPassEnded = true;
+    const count = (state: PageBlock["status"]) => this.blocks.filter((block) => block.status === state).length;
+    const completed = count("completed"), skipped = count("skipped"), failed = count("failed");
+    const pending = count("pending") + count("running"), invalidated = count("superseded");
+    this.timings.mark("session.end", { jobId: this.jobId }, {
+      durationMs: performance.now() - this.runStarted, blocks: this.blocks.length,
+      completed, skipped, failed, pending, invalidated,
+      success: status === "completed" && failed === 0 && pending === 0 && invalidated === 0,
+      cancelled: status === "stopped",
+    });
+  }
+
   private refreshState(status: PageState["status"], message?: string): void {
+    this.endInitialPass(status);
     const total = this.blocks.length;
     const completed = this.blocks.filter((block) => block.status === "completed").length;
     const failed = this.blocks.filter((block) => block.status === "failed").length;
@@ -1140,6 +1177,7 @@ export class PageTranslator {
   }
 
   private setState(status: PageState["status"], message?: string): void {
+    this.endInitialPass(status);
     this.state = { ...this.state, status, message: message || stateMessage(status, this.state.failed) };
     this.publishState();
   }
