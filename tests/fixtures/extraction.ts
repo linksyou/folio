@@ -2,6 +2,15 @@
 const paragraph = "This visible passage contains meaningful article text for translation.";
 
 export const extractionCases = [
+  { name: "explicit and inherited no-translate", html: `<p translate="NO">${paragraph}</p><main translate="no"><p>${paragraph}</p></main>`, expected: [] },
+  { name: "explicit yes overrides inherited no", html: `<main translate="no"><p>Retained title</p><p translate="yes">${paragraph}</p></main>`, expected: [paragraph] },
+  { name: "empty translate attribute enables inline subtree", html: `<p translate="no">Retained <em translate="">Translate these words.</em> retained.</p>`, expected: ["Translate these words."] },
+  { name: "notranslate compatibility class stays inherited", html: `<main class="notranslate"><p translate="yes">${paragraph}</p></main>`, expected: [] },
+  { name: "invalid translate value inherits", html: `<main translate="no"><p translate="invalid">${paragraph}</p></main>`, expected: [] },
+  { name: "pure addresses are skipped", html: '<p>https://example.test/path</p><p>www.example.test</p><p>sample@example.technology</p>', expected: [] },
+  { name: "address in prose is kept", html: '<p>Visit https://example.test for the complete documentation.</p>', expected: ['Visit https://example.test for the complete documentation.'] },
+  { name: "weak main yields to substantial article", html: `<main><h2>Loading</h2></main><article><p>${paragraph.repeat(3)}</p></article>`, expected: [paragraph.repeat(3)] },
+  { name: "short main does not yield to unrelated short article", html: '<main><p>Introduction.</p></main><article><p>Advertisement.</p></article>', expected: ['Introduction.'] },
   { name: "ordinary semantic paragraph", html: `<p>${paragraph}</p>`, expected: [paragraph] },
   { name: "long generic div", html: `<div>${paragraph}</div>`, expected: [paragraph] },
   { name: "direct section prose", html: `<section>${paragraph}</section>`, expected: [paragraph] },

@@ -18,6 +18,20 @@ function translator(transport: TranslationTransport) {
 const outputs = () => Array.from(document.querySelectorAll('[data-folio="translation"]'), e => e.textContent ?? '');
 
 async function regression(name: string) {
+  if (name === 'literal-marker') {
+    const source = `An unusual literal ⟪FOLIO:${'1'.repeat(2000)}⟫ is still ordinary source text.`;
+    reset(`<main><p>${source}</p></main>`);
+    const engine = translator({ async translate(_job, _revision, blocks) {
+      return { ok: true, result: blocks.map(b => ({ id: b.id, text: b.text })) };
+    }, async cancel() {} });
+    try {
+      engine.handle('start', name, 'r1');
+      await engine.whenIdle();
+      check(engine.getState().completed === 1 && outputs()[0] === source, 'long literal marker broke chunking');
+      return { name, state: engine.getState() };
+    } finally { engine.dispose(); }
+  }
+  if (['protected-text', 'protected-failure', 'protection-toggle', 'incremental'].includes(name)) return qualityRegression(name);
   if (name === 'extraction') {
     // Fixtures are also exercised by the Node suite; this path uses real CSS/layout.
     const { extractionCases } = await import('../fixtures/extraction.js');
@@ -86,6 +100,74 @@ async function regression(name: string) {
   } finally { engine.dispose(); }
 }
 
+async function qualityRegression(name: string) {
+  const incremental = name === 'incremental';
+  reset(incremental
+    ? `<main>${Array.from({ length: 300 }, (_, i) => `<p>${i}. ${sample.repeat(2)}</p>`).join('')}</main>`
+    : `<main><p>${'A'.repeat(1497)}<code>const  secret = 42;</code> preserves code. <span translate="no">Local Product</span> uses <math><mi>x</mi><mo>+</mo><mn>1</mn></math> in this explanation.</p></main>`);
+  const paragraph = document.querySelector('p')!;
+  const originalNodes = [...paragraph.childNodes];
+  const original = paragraph.textContent;
+  const sent: string[] = [];
+  const engine = translator({
+    async translate(_job, _revision, blocks, options) {
+      sent.push(...blocks.map(b => b.text));
+      for (const block of blocks) {
+        check(!block.text.includes('secret') && !block.text.includes('Local Product'), 'protected value left the page');
+        const start = block.text.indexOf('⟪');
+        if (start >= 0) {
+          check(/⟪FOLIO:\d+⟫/.test(block.text), 'chunk split a marker');
+          options?.onProgress?.([{ id: block.id, text: block.text.slice(0, start + 4) }]);
+          check(outputs().every(text => !text.includes('⟪')), 'partial marker was rendered');
+        }
+      }
+      if (name === 'protection-toggle') await delay(40);
+      const result = blocks.map(b => ({ id: b.id, text: `译文 ${b.text}` }));
+      options?.onProgress?.(result);
+      return { ok: true, result: name === 'protected-failure'
+        ? result.map(b => ({ ...b, text: b.text.replace(/⟪FOLIO:\d+⟫/gu, '') })) : result };
+    },
+    async cancel() {},
+  });
+  try {
+    engine.handle('start', `quality-${name}`, 'r1');
+    if (name === 'protection-toggle') {
+      paragraph.setAttribute('translate', 'no');
+      await delay(140);
+      await engine.whenIdle();
+      check(outputs().length === 0, 'late output survived translate=no');
+      paragraph.setAttribute('translate', 'yes');
+      await delay(80);
+    }
+    await engine.whenIdle();
+    if (name === 'protected-failure') {
+      check(engine.getState().failed === 1 && outputs().length === 0, 'invalid marker output was accepted');
+    } else if (incremental) {
+      const before = sent.length;
+      paragraph.firstChild!.textContent = `Changed paragraph. ${sample.repeat(2)}`;
+      await engine.whenIdle();
+      check(sent.length === before + 1, 'text edit retransmitted unchanged paragraphs');
+      const event = engine.getDiagnostics().filter(e => e.stage === 'extraction.dynamic').at(-1);
+      check(event?.values?.incremental === true && event.values.candidates === 1, 'text edit rescanned document');
+      check(engine.getState().completed === 300 && outputs().length === 300, 'incremental edit lost paragraphs');
+      // Structural edits can change the selected content root; must use full discovery.
+      document.querySelector('main')!.innerHTML = `<article><p>${sample.repeat(2)}</p></article>`;
+      await engine.whenIdle();
+      check(engine.getState().total === 1 && outputs().length === 1, 'replaced root retained stale paragraphs');
+      check(engine.getDiagnostics().filter(e => e.stage === 'extraction.dynamic').at(-1)?.values?.incremental === false, 'scope edit did not rescan');
+    } else {
+      check(outputs().length === 1 && outputs()[0].includes('const  secret = 42;')
+        && outputs()[0].includes('Local Product') && outputs()[0].includes('x+1'), `protected values were lost: ${JSON.stringify({ state: engine.getState(), outputs: outputs().map(text => text.slice(-200)), sent: sent.map(text => text.slice(-200)) })}`);
+      check(!outputs()[0].includes('⟪FOLIO:'), 'opaque markers leaked');
+      engine.setDisplayMode('translation-only');
+      engine.handle('restore');
+      await engine.whenIdle();
+      check(paragraph.textContent === original && originalNodes.every((node, i) => paragraph.childNodes[i] === node), 'restore changed source nodes');
+    }
+    return { name, sourceChunks: sent.length, state: engine.getState(), events: engine.getDiagnostics() };
+  } finally { engine.dispose(); }
+}
+
 async function benchmark(scroll: boolean) {
   reset(`<main>${Array.from({ length: 12 }, (_, i) => `<p style="min-height:220px; margin:0 0 12px">Paragraph ${i + 1}. ${sample.repeat(9)}</p>`).join('')}</main>`);
   const cache = new TranslationCache();
@@ -116,7 +198,7 @@ async function benchmark(scroll: boolean) {
         try {
           if (options?.signal?.aborted) return { ok: false, error: { code: 'CANCELLED', message: 'cancelled' } };
           return { ok: true, result: await reuse.translate({ jobId, batchId, settingsRevision, blocks,
-            origin: 'https://folio.test', url: 'https://folio.test/article' }, options?.onProgress) };
+            origin: 'https://folio.test', url: 'https://folio.test/article', priority: options?.priority }, options?.onProgress) };
         } catch (error) { return { ok: false, error: publicError(error) }; }
         finally { options?.signal?.removeEventListener('abort', abort); }
       },

@@ -21,6 +21,14 @@ import {
 
 const contentGlobal = globalThis as typeof globalThis & { __folioInstalled?: boolean };
 
+function isDocumentAnchor(): boolean {
+  if (!location.hash || /^#(?:!|\/)/u.test(location.hash)) return false;
+  try {
+    const name = decodeURIComponent(location.hash.slice(1));
+    return !!document.getElementById(name) || Array.from(document.getElementsByName(name)).some(element => element.tagName === "A");
+  } catch { return false; }
+}
+
 if (!contentGlobal.__folioInstalled) {
   contentGlobal.__folioInstalled = true;
 
@@ -157,7 +165,8 @@ if (!contentGlobal.__folioInstalled) {
       options?.signal?.addEventListener("abort", cancel, { once: true });
       try {
         return await sendRuntime<Translation[]>({
-          type: "translate.batch", jobId, batchId, settingsRevision, blocks,
+          type: "translate.batch", jobId, batchId, settingsRevision, blocks, priority: options?.priority,
+          anchorFragment: isDocumentAnchor(),
         });
       } finally {
         timings.mark("batch.reply", identity);

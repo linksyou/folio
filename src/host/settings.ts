@@ -43,10 +43,10 @@ export function sameGenerationSettings(left: Settings, right: Settings): boolean
     catch { return value.trim(); } // A repaired legacy URL still changes identity.
   };
   const values = (settings: Settings) => [
-    settings.provider, settings.chatgptModel.trim(), baseUrl(settings.customBaseUrl),
-    settings.customModel.trim(), settings.apiKey.trim(), settings.targetLanguage ?? "zh-CN",
-    normalizeReasoningChoice(settings.chatgptReasoningEffort),
-    normalizeReasoningChoice(settings.customReasoningEffort),
+    settings.provider, settings.targetLanguage ?? "zh-CN",
+    ...(settings.provider === "chatgpt"
+      ? [settings.chatgptModel.trim(), normalizeReasoningChoice(settings.chatgptReasoningEffort)]
+      : [baseUrl(settings.customBaseUrl), settings.customModel.trim(), settings.apiKey.trim(), normalizeReasoningChoice(settings.customReasoningEffort)]),
   ];
   return JSON.stringify(values(left)) === JSON.stringify(values(right));
 }

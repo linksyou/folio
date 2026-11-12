@@ -1,6 +1,8 @@
 import { AppError } from "../shared/errors.js";
-import { MAX_BATCH_CHARACTERS, TRANSLATION_PROMPT_VERSION, type TextBlock, type Translation } from "../shared/protocol.js";
+import { MAX_BATCH_CHARACTERS, TRANSLATION_PROMPT_VERSION, type TextBlock, type Translation, type TranslationPriority } from "../shared/protocol.js";
 import { TranslationCache } from "./translation-cache.js";
+import { preservesProtectedText } from "../shared/protected-text.js";
+import { cacheDocumentUrl } from "./cache-document-url.js";
 
 export interface TranslationReuseRequest {
   jobId: string;
@@ -11,10 +13,12 @@ export interface TranslationReuseRequest {
   blocks: TextBlock[];
   force?: boolean;
   enabled?: boolean;
+  priority?: TranslationPriority;
+  anchorFragment?: boolean;
 }
 
 export interface TranslationReuseProvider {
-  translate(request: { jobId: string; batchId: string; settingsRevision: string; blocks: TextBlock[] }, onProgress: (translations: Translation[]) => void): Promise<Translation[]>;
+  translate(request: { jobId: string; batchId: string; settingsRevision: string; blocks: TextBlock[]; priority?: TranslationPriority }, onProgress: (translations: Translation[]) => void): Promise<Translation[]>;
   cancel(jobId: string, batchId: string): void | Promise<void>;
 }
 
@@ -125,7 +129,7 @@ export class TranslationReuse {
   private async prepare(consumer: Consumer): Promise<void> {
     const request = consumer.request;
     const keys = await Promise.all(request.blocks.map(async (block) => {
-      const input = JSON.stringify([request.origin, request.url, request.settingsRevision, TRANSLATION_PROMPT_VERSION, block.text]);
+      const input = JSON.stringify([request.origin, cacheDocumentUrl(request.url, request.anchorFragment), request.settingsRevision, TRANSLATION_PROMPT_VERSION, block.text]);
       const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
       return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
     }));
@@ -152,9 +156,11 @@ export class TranslationReuse {
     }
 
     const misses: WorkItem[] = [];
+    const cachedEntries = consumer.persist && !request.force
+      ? await this.cache.getMany(created.filter(item => item.text.length <= MAX_BATCH_CHARACTERS).map(item => item.key))
+      : new Map<string, string>();
     await Promise.all(created.map(async (item) => {
-      const cached = consumer.persist && !request.force && item.text.length <= MAX_BATCH_CHARACTERS
-        ? await this.cache.get(item.key) : undefined;
+      const cached = cachedEntries.get(item.key);
       if (!item.subscribers.size) return;
       if (cached !== undefined && consumer.epoch === this.epoch(request.origin) && this.enabled) {
         // A mixed batch can show its known text while the missing peers stream.
@@ -182,6 +188,7 @@ export class TranslationReuse {
       if (!group.active) throw this.cancelled();
       return this.provider.translate({
         jobId: group.jobId, batchId: group.batchId, settingsRevision: request.settingsRevision,
+        priority: request.priority,
         blocks: active.map((item) => ({ id: item.id, text: item.text })),
       }, (translations) => this.receiveProgress(group, translations));
     }).then(
@@ -215,8 +222,12 @@ export class TranslationReuse {
       this.failGroup(group, new AppError("INVALID_RESPONSE", "翻译结果不完整，请重试。"));
       return;
     }
-    group.active = false;
     const result = new Map(translations.map((translation) => [translation.id, translation.text]));
+    if (group.items.some(item => !preservesProtectedText(item.text, result.get(item.id)!))) {
+      this.failGroup(group, new AppError("INVALID_RESPONSE", "译文未保留受保护内容，请重试。"));
+      return;
+    }
+    group.active = false;
     const entries = group.items.filter((item) => item.text.length <= MAX_BATCH_CHARACTERS && this.versions.get(item.key) === item.version &&
       [...item.subscribers.keys()].some((consumer) => consumer.persist && this.enabled && consumer.epoch === this.epoch(item.origin)))
       .map((item) => ({ key: item.key, origin: item.origin, text: result.get(item.id)! }));

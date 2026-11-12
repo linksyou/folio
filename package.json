@@ -16,8 +16,10 @@
     "install:host": "tsx scripts/install-host.ts",
     "uninstall:host": "tsx scripts/install-host.ts --uninstall",
     "test:browser": "tsx scripts/test-browser.ts",
+    "test:native": "npm run build && tsx scripts/test-native.ts",
     "benchmark:status": "tsx scripts/benchmark-status.ts",
     "benchmark:browser": "tsx scripts/test-browser.ts --benchmark",
+    "benchmark:dynamic": "tsx scripts/benchmark-dynamic.ts",
     "performance:report": "tsx scripts/analyze-performance.ts"
   },
   "dependencies": {

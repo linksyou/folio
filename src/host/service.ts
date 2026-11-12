@@ -207,7 +207,7 @@ export class HostService {
             }
             completed = true;
             return translated;
-          });
+          }, command.priority);
         } catch (error) {
           if (signal.reason instanceof AppError && signal.reason.code === "TIMEOUT") throw signal.reason;
           throw error;

@@ -8,10 +8,13 @@
 npm run test:browser
 npm run benchmark:browser
 npm run benchmark:status
+npm run benchmark:dynamic
 npm run performance:report -- /path/to/trace.json --output /path/to/report.json
 ```
 
 `benchmark:browser` 默认 5 轮，使用隔离浏览器与固定合成页面，运行真实 PageTranslator、TranslationReuse 和 IndexedDB，provider 用固定延迟的本地模拟实现。它验证正文调度、显示与缓存路径，不读取本机模型账号，也不能代表真实网络、TLS 或模型生成速度。`benchmark:status` 默认 10 轮，对隔离数据目录中的认证/Host 状态读取计时，不调用模型。具体样本和输出位置以命令输出为准。
+
+`benchmark:dynamic` 默认 30 轮，测 1000 个已是目标语言的长段落中修改一个 Text 节点后的发现与协调耗时，无模型调用；不包含防抖、即时失效校验和绘制。`FOLIO_BENCHMARK_SOURCE` 可指向导出旧版 `src/` 的目录，以相同 fixture 对比。当前对照与适用边界见 [阅读质量迭代](READING-QUALITY.md)。
 
 默认浏览器为 Playwright Chromium；首次需 `npx playwright install chromium`。也可用 `FOLIO_BROWSER_CHANNEL=chrome npm run benchmark:browser` 调用本机 Chrome，测试创建隔离临时 profile，不连接日常浏览器配置。固定浏览器版本和视口再比较；不同浏览器或机器的数据保留为不同实验。
 

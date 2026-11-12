@@ -50,7 +50,7 @@ async function dispatch(input: unknown): Promise<void> {
     for (const entry of progressStreams.values()) {
       if ((command.type === "translate.cancel" && entry.jobId === command.jobId) ||
           (command.type === "translate.cancelBatch" && entry.jobId === command.jobId && entry.batchId === command.batchId) ||
-          ["settings.save", "auth.login", "auth.logout", "auth.select"].includes(command.type)) entry.stream.close();
+          ["auth.login", "auth.logout", "auth.select"].includes(command.type)) entry.stream.close();
     }
     let onProgress: ((translations: Translation[]) => void) | undefined;
     if (command.type === "translate" && command.batchId) {

@@ -3,6 +3,33 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { canHideRange, collectRanges, rangeStillMatches } from "../src/extension/page/extract.js";
 import { extractionCases } from "./fixtures/extraction.js";
+import { preservesProtectedText, restoreProtectedText } from "../src/shared/protected-text.js";
+
+test("inline protected text is masked without discarding neighboring prose", () => {
+  const dom = new JSDOM('<p>Run <code>npm  test</code> with <span translate="no">Project Cedar</span> now.</p>');
+  try {
+    const range = collectRanges(dom.window.document)[0];
+    assert.equal(range.translationSource, 'Run ⟪FOLIO:0⟫ with ⟪FOLIO:1⟫ now.');
+    assert.equal(restoreProtectedText('执行 ⟪FOLIO:0⟫，使用 ⟪FOLIO:1⟫。', range.protectedText!), '执行 npm  test，使用 Project Cedar。');
+    assert(!preservesProtectedText(range.translationSource!, '执行 ⟪FOLIO:0⟫。'));
+    assert(!preservesProtectedText(range.translationSource!, '⟪FOLIO:0⟫ ⟪FOLIO:0⟫'));
+    assert(!preservesProtectedText(range.translationSource!, '⟪FOLIO:0⟫ ⟪FOLIO:1⟫ ⟪FOLIO:9⟫'));
+    assert.equal(restoreProtectedText('执行 ⟪FOL', range.protectedText!, true), '执行 ');
+    dom.window.document.querySelector('code')!.textContent = 'npm test';
+    assert.equal(rangeStillMatches(range), false, 'protected whitespace changes must invalidate the mapping');
+  } finally { dom.window.close(); }
+});
+
+test("protection changes invalidate existing ranges and literal markers do not collide", () => {
+  const dom = new JSDOM('<p>Keep ⟪FOLIO:0⟫ and <code>answer</code> unchanged.</p>');
+  try {
+    const range = collectRanges(dom.window.document)[0];
+    assert.equal(range.protectedText![0].token, '⟪FOLIO:1⟫');
+    range.element.setAttribute('translate', 'no');
+    assert.equal(rangeStillMatches(range), false);
+    assert.deepEqual(collectRanges(dom.window.document), []);
+  } finally { dom.window.close(); }
+});
 
 for (const fixture of extractionCases) {
   test(`extraction: ${fixture.name}`, () => {
