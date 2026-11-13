@@ -144,12 +144,14 @@ export class TranslationCache {
 
   getMany(keys: string[]): Promise<Map<string, string>> {
     return this.operation(new Map<string, string>(), async () => {
-      const missing = [...new Set(keys)].filter(key => !this.hot.has(key));
+      // Snapshot this batch before LRU promotion can evict a later hot hit.
+      const available = new Map(keys.map(key => [key, this.hot.get(key)]));
+      const missing = [...available.keys()].filter(key => !available.get(key));
       const loaded = this.store.getMany ? await this.store.getMany(missing) : await Promise.all(missing.map(key => this.store.get(key)));
-      const available = new Map(missing.map((key, index) => [key, loaded[index]]));
+      missing.forEach((key, index) => available.set(key, loaded[index]));
       const result = new Map<string, string>();
       for (const key of keys) {
-        const entry = this.hot.get(key) ?? available.get(key);
+        const entry = available.get(key);
         if (!entry) continue;
         if (this.now() - entry.createdAt >= this.ttlMs) { this.hot.delete(key); this.touches.delete(key); continue; }
         const touched = { ...entry, accessedAt: this.now() };

@@ -18,6 +18,7 @@ function translator(transport: TranslationTransport) {
 const outputs = () => Array.from(document.querySelectorAll('[data-folio="translation"]'), e => e.textContent ?? '');
 
 async function regression(name: string) {
+  if (name === 'cache-capacity') return cacheCapacityRegression();
   if (name === 'literal-marker') {
     const source = `An unusual literal ⟪FOLIO:${'1'.repeat(2000)}⟫ is still ordinary source text.`;
     reset(`<main><p>${source}</p></main>`);
@@ -166,6 +167,41 @@ async function qualityRegression(name: string) {
     }
     return { name, sourceChunks: sent.length, state: engine.getState(), events: engine.getDiagnostics() };
   } finally { engine.dispose(); }
+}
+
+async function cacheCapacityRegression() {
+  const cache = new TranslationCache();
+  await cache.clear();
+  let providerCalls = 0;
+  let unavailable = false;
+  const reuse = new TranslationReuse(cache, {
+    async translate(request) {
+      providerCalls++;
+      if (unavailable) throw new Error('Fixture provider unavailable');
+      return request.blocks.map(b => ({ id: b.id, text: `译文 ${b.text}` }));
+    },
+    cancel() {},
+  });
+  let sequence = 0;
+  const translate = (ids: number[]) => reuse.translate({
+    jobId: 'cache-capacity', batchId: String(++sequence), settingsRevision: 'r1',
+    origin: 'https://folio.test', url: 'https://folio.test/article',
+    blocks: ids.map(id => ({ id: String(id), text: `Paragraph ${id}. ${sample}` })),
+  });
+  await translate(Array.from({ length: 257 }, (_, i) => i));
+  await translate(Array.from({ length: 256 }, (_, i) => i));
+  check(providerCalls === 1, 'cache warmup repeated provider work');
+  providerCalls = 0;
+  unavailable = true;
+  const requested = [256, 0, 1];
+  const translations = await translate(requested);
+  check(JSON.stringify(translations) === JSON.stringify(requested.map(id => ({
+    id: String(id), text: `译文 Paragraph ${id}. ${sample}`,
+  }))), 'mixed cache hits were lost or reordered');
+  check(providerCalls === 0, 'fully cached batch reached the unavailable provider');
+  const stats = await cache.stats();
+  check(stats.entries === 257, 'IndexedDB did not retain all fixture translations');
+  return { name: 'cache-capacity', cacheStore: 'IndexedDB', entries: stats.entries, providerCalls, translations };
 }
 
 async function benchmark(scroll: boolean) {
