@@ -1,5 +1,6 @@
 import type { ConnectionPreparation, ExtensionRequest, HostStatus, PageAction, PageState, Result } from "../shared/protocol.js";
 import type { SiteStatus } from "./site-rules.js";
+import { pageError, pageFeedback } from "../shared/page-feedback.js";
 
 function required<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -18,6 +19,7 @@ const startButton = required<HTMLButtonElement>("start");
 const stopButton = required<HTMLButtonElement>("stop");
 const retryButton = required<HTMLButtonElement>("retry");
 const restoreButton = required<HTMLButtonElement>("restore");
+const retranslateButton = required<HTMLButtonElement>("retranslate");
 const autoTranslate = required<HTMLInputElement>("auto-translate");
 const siteSummary = required<HTMLParagraphElement>("site-summary");
 const siteHelp = required<HTMLParagraphElement>("site-help");
@@ -32,15 +34,7 @@ let actionPending = false;
 const errors = { page: "", host: "", status: "", site: "" };
 
 function chineseError(error: { code: string; message: string }): string {
-  if (/[㐀-鿿]/u.test(error.message)) return error.message;
-  const known: Record<string, string> = {
-    HOST_UNAVAILABLE: "未检测到本地辅助程序，请打开设置查看安装说明。",
-    PAGE_UNAVAILABLE: "当前页面暂不支持翻译。",
-    AUTH_REQUIRED: "请先在设置中登录 ChatGPT。",
-    PLAN_DISABLED: "当前账号尚未允许使用 ChatGPT 计划。",
-    LIMIT_REACHED: "当前用量已达到限制，请稍后重试或更换连接。",
-  };
-  return known[error.code] ?? `操作失败（${error.code}），请重试。`;
+  return pageError(error).message;
 }
 
 function renderErrors(): void {
@@ -64,28 +58,27 @@ async function send<T>(request: ExtensionRequest): Promise<Result<T>> {
 
 function renderPage(state: PageState): void {
   currentPageState = state;
-  statusMessage.textContent = state.message;
-  progressText.textContent = `${state.completed} / ${state.total} 段${state.skipped ? ` · 无需翻译 ${state.skipped} 段` : ""}${state.failed ? ` · 失败 ${state.failed} 段` : ""}`;
+  const feedback = pageFeedback(state);
+  statusMessage.textContent = feedback.message;
+  progressText.textContent = feedback.progress;
   const ratio = state.total ? Math.round(((state.completed + (state.skipped ?? 0)) / state.total) * 100) : 0;
   progressBar.style.width = `${ratio}%`;
-  progressText.hidden = state.total === 0;
+  progressText.hidden = state.total === 0 || feedback.problem && !feedback.working && state.completed > 0;
   progressBar.parentElement!.hidden = state.total === 0;
-  const working = state.status === "running";
-  // Completed pages still observe dynamic content and same-origin navigation.
-  const stoppable = working || state.status === "watching" || state.status === "completed";
-  stopButton.parentElement!.hidden = !stoppable && state.total === 0;
-  stopButton.disabled = !stoppable || actionPending;
-  retryButton.hidden = state.failed === 0;
-  retryButton.disabled = state.failed === 0 || working || actionPending;
+  stopButton.parentElement!.hidden = !feedback.stoppable && state.total === 0 && !feedback.settings;
+  stopButton.hidden = !feedback.stoppable || feedback.primary === "stop";
+  stopButton.disabled = actionPending;
+  stopButton.textContent = "停止持续翻译";
+  retryButton.hidden = !feedback.settings || feedback.working;
+  retryButton.textContent = feedback.retryLabel;
+  retryButton.disabled = feedback.working || actionPending;
   restoreButton.disabled = state.total === 0 || actionPending;
-  startButton.disabled = working || actionPending;
-  startButton.textContent = working ? "正在翻译…" : state.status === "paused" || state.status === "stopped"
-    ? "继续翻译"
-    : state.status === "completed" || state.status === "watching"
-      ? "重新翻译"
-      : "翻译正文";
-  startButton.title = state.status === "completed" || state.status === "watching"
-    ? "忽略已有缓存，重新生成当前正文译文" : "";
+  restoreButton.hidden = feedback.primary === "restore" || state.total === 0;
+  startButton.disabled = actionPending;
+  startButton.textContent = feedback.label;
+  startButton.title = "";
+  retranslateButton.disabled = feedback.working || actionPending;
+  retranslateButton.parentElement!.hidden = state.total === 0;
 }
 
 async function pageAction(action: PageAction, userInitiated = true): Promise<void> {
@@ -105,9 +98,14 @@ async function pageAction(action: PageAction, userInitiated = true): Promise<voi
     if (revision !== pageRevision) return;
     if (!response.ok) {
       setError(errorSource, chineseError(response.error));
+      if (userInitiated && response.error.code !== "CANCELLED") {
+        renderPage({ ...(currentPageState ?? { total: 0, completed: 0, failed: 0, message: "" }),
+          status: "paused", continuing: false, error: pageError(response.error) });
+      }
       return;
     }
     setError(errorSource);
+    if (!response.result.error) setError("page");
     renderPage(response.result);
   } finally {
     if (userInitiated) {
@@ -216,14 +214,11 @@ autoTranslate.addEventListener("change", () => {
 });
 
 startButton.addEventListener("click", () => {
-  const status = currentPageState?.status;
-  const action: PageAction = status === "paused" || status === "stopped"
-    ? "retry"
-    : status === "completed" || status === "watching"
-      ? "retranslate"
-      : "start";
-  void pageAction(action);
+  const action = currentPageState ? pageFeedback(currentPageState).primary : "start";
+  if (action === "settings") void chrome.runtime.openOptionsPage();
+  else void pageAction(action);
 });
+retranslateButton.addEventListener("click", () => void pageAction("retranslate"));
 stopButton.addEventListener("click", () => void pageAction("stop"));
 retryButton.addEventListener("click", () => void pageAction("retry"));
 restoreButton.addEventListener("click", () => void pageAction("restore"));

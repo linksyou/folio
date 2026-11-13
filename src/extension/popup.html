@@ -25,7 +25,7 @@
           <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
           <p id="progress-text" class="muted">0 / 0 段</p>
         </section>
-        <button id="start" class="primary full" type="button">翻译正文</button>
+        <button id="start" class="primary full" type="button" disabled>正在读取状态…</button>
         <div class="actions">
           <button id="stop" type="button" title="停止当前页翻译，不改变网站自动翻译设置" disabled>停止</button>
           <button id="retry" type="button" hidden disabled>重试失败</button>
@@ -47,6 +47,10 @@
         <div class="connection-line"><span class="connection-mark" aria-hidden="true"></span><p id="connection-summary" class="muted">正在读取连接…</p></div>
         <details class="popup-more">
           <summary>更多</summary>
+          <div hidden>
+            <p class="muted">忽略已有缓存，重新生成全部正文译文。</p>
+            <button id="retranslate" type="button">全部重新翻译</button>
+          </div>
           <p id="connection-preparation" class="muted" aria-live="polite" hidden></p>
           <p id="usage-row" class="muted" hidden>ChatGPT 计划 · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">管理用量</a></p>
           <button id="export-diagnostics" class="text-button" type="button">导出性能记录</button>

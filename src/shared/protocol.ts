@@ -117,7 +117,11 @@ export type PageAction = "start" | "retry" | "retranslate" | "stop" | "restore" 
 export interface PageState {
   /** Source already matches the target; no model output was generated. */
   skipped?: number;
-  status: "idle" | "running" | "watching" | "paused" | "completed" | "stopped" | "error";
+  status: "idle" | "running" | "watching" | "paused" | "completed" | "partial" | "failed" | "stopped" | "error";
+  /** Safe, allowlisted explanation; never provider response text or credentials. */
+  error?: PublicError;
+  /** Whether newly discovered content will still be translated. */
+  continuing?: boolean;
   total: number;
   completed: number;
   failed: number;
