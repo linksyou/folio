@@ -3,6 +3,7 @@ import { collectRanges } from '../../src/extension/page/extract.js';
 import { TranslationCache } from '../../src/extension/translation-cache.js';
 import { TranslationReuse } from '../../src/extension/translation-reuse.js';
 import { publicError } from '../../src/shared/errors.js';
+import { pairedMathRegression, pairedMathRaceRegression } from './paired-math.js';
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
@@ -18,6 +19,8 @@ function translator(transport: TranslationTransport) {
 const outputs = () => Array.from(document.querySelectorAll('[data-folio="translation"]'), e => e.textContent ?? '');
 
 async function regression(name: string) {
+  if (name === 'paired-math') return pairedMathRegression();
+  if (name === 'paired-math-races') return pairedMathRaceRegression();
   if (name === 'retry-new-job') {
     reset(`<main><p>${sample}</p></main>`);
     const jobs: string[] = [];

@@ -48,6 +48,7 @@ function createReader(document: Document) {
   const visibility = new WeakMap<Element, boolean>();
   const boundaries = new WeakMap<Element, boolean>();
   const translationModes = new WeakMap<Element, boolean>();
+  const mathPairs = new WeakMap<Element, { semantic: Element; value: string; inline: boolean } | null>();
   const view = document.defaultView;
   const style = (element: Element) => {
     let cached = styles.get(element);
@@ -82,8 +83,54 @@ function createReader(document: Document) {
     translationModes.set(element, result);
     return result;
   };
-  const protectedElement = (element: Element) => element.matches(PROTECTED_SELECTOR) || !translatable(element);
+  // MediaWiki's MathJax renderer leaves a semantic MathML sibling behind. Only
+  // this explicit pair may read through the auxiliary wrapper's hidden style;
+  // arbitrary hidden text, SVG text and image alt remain outside the exception.
+  const mathPair = (element: Element) => {
+    if (mathPairs.has(element)) return mathPairs.get(element)!;
+    mathPairs.set(element, null);
+    if (!element.matches('.mwe-math-mathml-a11y, mjx-container')) return null;
+    const sibling = (node: Node, direction: 'previousSibling' | 'nextSibling'): Node | null => {
+      let next = adjacentOriginal(node, direction);
+      while (next && (next.nodeType === next.COMMENT_NODE
+        || (next.nodeType === next.TEXT_NODE && !normalize(next.textContent ?? '')))) {
+        next = adjacentOriginal(next, direction);
+      }
+      return next;
+    };
+    const semantic = (element.matches('.mwe-math-mathml-a11y') ? element : sibling(element, 'previousSibling')) as Element | null;
+    const rendered = (semantic && sibling(semantic, 'nextSibling')) as Element | null;
+    if (semantic?.nodeType !== 1 || !semantic.matches('.mwe-math-mathml-a11y')
+      || rendered?.nodeType !== 1 || !rendered.matches('mjx-container')
+      // Before lazy typesetting, MathJax has no class or SVG yet.
+      || (!rendered.classList.contains('MathJax') && !rendered.firstElementChild?.matches('mjx-lazy[data-mjx-lazy]'))
+      || !visible(rendered) || !semantic.parentElement || !visible(semantic.parentElement)) return null;
+    const math = semantic.firstElementChild;
+    if (!math?.matches('math') || semantic.childElementCount !== 1
+      || Array.from(semantic.childNodes).some(node => node.nodeType === node.TEXT_NODE && normalize(node.textContent ?? ''))) return null;
+    const value = (node: Node): string => {
+      if (node.nodeType === node.TEXT_NODE) return node.textContent ?? '';
+      if (node.nodeType !== node.ELEMENT_NODE) return '';
+      const child = node as Element;
+      // MathML annotations are alternate encodings, not additional formula text.
+      if (child.matches(`annotation, annotation-xml, ${OMITTED_TEXT_SELECTOR}, [hidden], [aria-hidden='true']`)) return '';
+      return Array.from(child.childNodes).map(value).join('');
+    };
+    const display = style(rendered)?.display ?? '';
+    const pair = { semantic, value: value(math), inline: !math.matches('[display="block"], .mwe-math-element-block')
+      && rendered.getAttribute('display') !== 'true'
+      && (!display || ['inline', 'inline-block', 'contents'].includes(display)) };
+    if (!normalize(pair.value)) return null;
+    mathPairs.set(semantic, pair);
+    mathPairs.set(rendered, pair);
+    return pair;
+  };
+  const inlineMath = (node: Node) => node.nodeType === node.ELEMENT_NODE && mathPair(node as Element)?.inline === true;
+  const protectedElement = (element: Element) => !!mathPair(element) || element.matches(PROTECTED_SELECTOR) || !translatable(element);
   const boundary = (element: Element): boolean => {
+    const pair = mathPair(element);
+    if (pair) return !pair.inline;
+    if (element.matches('math[display="block"]')) return true;
     const display = style(element)?.display ?? "";
     return element.matches(BOUNDARY_SELECTOR)
       || (!!element.parentElement && translatable(element) && !translatable(element.parentElement))
@@ -91,7 +138,7 @@ function createReader(document: Document) {
   };
   const containsBoundary = (element: Element): boolean => {
     // Inline MathML has its own layout tree; it is one protected value.
-    if (element.matches(PROTECTED_SELECTOR)) return false;
+    if (mathPair(element) || element.matches(PROTECTED_SELECTOR)) return false;
     const cached = boundaries.get(element);
     if (cached !== undefined) return cached;
     const result = Array.from(element.children).some((child) =>
@@ -105,6 +152,8 @@ function createReader(document: Document) {
     if (node.nodeType === node.TEXT_NODE) return excludeCode && node.parentElement && protectedElement(node.parentElement) ? "" : node.textContent ?? "";
     if (node.nodeType !== node.ELEMENT_NODE) return "";
     const element = node as Element;
+    const pair = mathPair(element);
+    if (pair) return !excludeCode && pair.inline && element === pair.semantic ? pair.value : '';
     if (element.matches(OMITTED_TEXT_SELECTOR) || (excludeCode && protectedElement(element)) || !visible(element)) return "";
     return Array.from(element.childNodes).map((child) => text(child, excludeCode)).join("");
   };
@@ -116,7 +165,7 @@ function createReader(document: Document) {
       || computed?.fontWeight === "bold"
       || (Number.isFinite(parentSize) && size >= parentSize * 1.2);
   };
-  return { visible, boundary, containsBoundary, text, headingStyle, translatable, protectedElement };
+  return { visible, boundary, containsBoundary, text, headingStyle, translatable, protectedElement, inlineMath };
 }
 
 type Reader = ReturnType<typeof createReader>;
@@ -137,8 +186,8 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
   const ranges: SourceRange[] = [];
   let nodes: Node[] = [];
   const flush = () => {
-    while (nodes.length && !normalize(reader.text(nodes[0]))) nodes.shift();
-    while (nodes.length && !normalize(reader.text(nodes[nodes.length - 1]))) nodes.pop();
+    while (nodes.length && !reader.inlineMath(nodes[0]) && !normalize(reader.text(nodes[0]))) nodes.shift();
+    while (nodes.length && !reader.inlineMath(nodes[nodes.length - 1]) && !normalize(reader.text(nodes[nodes.length - 1]))) nodes.pop();
     const source = normalize(nodes.map((node) => reader.text(node)).join(""));
     if (source && eligible(element, nodes, source, reader)) {
       const protectedText: ProtectedText[] = [];
@@ -168,7 +217,7 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
     if (child.nodeType === child.ELEMENT_NODE) {
       const inline = child as Element;
       if (inline.matches(GENERATED_SELECTOR)) continue;
-      if (inline.matches(OMITTED_TEXT_SELECTOR) || !reader.visible(inline)
+      if (inline.matches(OMITTED_TEXT_SELECTOR) || (!reader.inlineMath(inline) && !reader.visible(inline))
         || reader.boundary(inline) || reader.containsBoundary(inline)) {
         flush();
         continue;

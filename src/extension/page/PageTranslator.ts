@@ -228,7 +228,7 @@ export class PageTranslator {
         characterDataOldValue: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["hidden", "aria-hidden", "style", "class", "role", "contenteditable", "lang", "translate"],
+        attributeFilter: ["hidden", "aria-hidden", "style", "class", "role", "contenteditable", "lang", "translate", "display"],
       });
     }
     // Capturing also observes scrolls inside an article's own scroll container.
