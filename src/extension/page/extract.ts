@@ -58,18 +58,20 @@ function createReader(document: Document) {
     }
     return cached;
   };
-  const visible = (element: Element): boolean => {
-    const cached = visibility.get(element);
-    if (cached !== undefined) return cached;
+  const locallyVisible = (element: Element): boolean => {
     const computed = style(element);
-    const result = !element.hasAttribute("hidden")
+    return !element.hasAttribute("hidden")
       && element.getAttribute("aria-hidden") !== "true"
       && computed?.display !== "none"
       && computed?.visibility !== "hidden"
       && computed?.visibility !== "collapse"
       && computed?.contentVisibility !== "hidden"
-      && Number.parseFloat(computed?.opacity ?? "") !== 0
-      && (!element.parentElement || visible(element.parentElement));
+      && Number.parseFloat(computed?.opacity ?? "") !== 0;
+  };
+  const visible = (element: Element): boolean => {
+    const cached = visibility.get(element);
+    if (cached !== undefined) return cached;
+    const result = locallyVisible(element) && (!element.parentElement || visible(element.parentElement));
     visibility.set(element, result);
     return result;
   };
@@ -113,7 +115,9 @@ function createReader(document: Document) {
       if (node.nodeType !== node.ELEMENT_NODE) return '';
       const child = node as Element;
       // MathML annotations are alternate encodings, not additional formula text.
-      if (child.matches(`annotation, annotation-xml, ${OMITTED_TEXT_SELECTOR}, [hidden], [aria-hidden='true']`)) return '';
+      // Bypass only the auxiliary wrapper's hidden style, not styles on math
+      // itself or its descendants. Stop at a hidden subtree as the normal reader does.
+      if (child.matches(`annotation, annotation-xml, ${OMITTED_TEXT_SELECTOR}`) || !locallyVisible(child)) return '';
       return Array.from(child.childNodes).map(value).join('');
     };
     const display = style(rendered)?.display ?? '';

@@ -25,7 +25,7 @@ const traces = [];
 try {
   for (const name of benchmark ? [] : ['extraction', 'streaming', 'stop', 'dynamic', 'restore', 'fade-in',
     'protected-text', 'protected-failure', 'protection-toggle', 'literal-marker', 'incremental', 'cache-capacity', 'retry-new-job',
-    'paired-math', 'paired-math-races']) {
+    'paired-math-extraction', 'paired-math', 'paired-math-races']) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     try {
       await context.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><meta charset="utf-8"></head><body></body></html>' }));

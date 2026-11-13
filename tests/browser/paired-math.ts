@@ -1,5 +1,5 @@
 import { PageTranslator } from '../../src/extension/page/PageTranslator.js';
-import { canHideRange, collectRanges } from '../../src/extension/page/extract.js';
+import { canHideRange, collectRanges, rangeStillMatches } from '../../src/extension/page/extract.js';
 import { TranslationCache } from '../../src/extension/translation-cache.js';
 import { TranslationReuse } from '../../src/extension/translation-reuse.js';
 import { publicError } from '../../src/shared/errors.js';
@@ -9,6 +9,58 @@ const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 const outputs = (root: ParentNode = document) => [...root.querySelectorAll('[data-folio="translation"]')];
 const reset = (html: string) => { document.body.innerHTML = `<main>${html}</main>`; window.scrollTo(0, 0); };
+
+// These extraction assertions use Chromium: jsdom 26 cannot compute MathML CSS.
+export function pairedMathExtractionRegression() {
+  for (const style of ['display:none', 'display:block;position:absolute;width:1px;height:1px;clip-path:inset(50%)']) {
+    reset(`<p>${formulaParagraph(value => pairedMath(value, style))}</p>`);
+    const ranges = collectRanges(document);
+    check(ranges.length === 1 && ranges[0].source === formulaSource && ranges[0].translationSource === formulaMasked,
+      'paired math fragmented');
+    check(JSON.stringify(ranges[0].protectedText?.map(p => p.text)) === JSON.stringify(['demb', 'dmodel']), 'wrong protected values');
+    check(canHideRange(ranges[0]), 'safe paragraph cannot hide');
+    document.querySelector('mtext')!.textContent = 'changed';
+    check(!rangeStillMatches(ranges[0]), 'formula text edit did not invalidate the range');
+    check(collectRanges(document)[0].protectedText?.[0].text === 'dchanged', 'formula text edit not reread');
+  }
+  reset(`<p>${pairedMath('first')} begins this explanation and ends with ${pairedMath('last')}</p>`);
+  const range = collectRanges(document)[0];
+  check(range.nodes.at(-1) === document.querySelector('p')!.lastChild && range.after === null && canHideRange(range),
+    'formula edge lost its rendered anchor');
+  reset(`<p>Readable introduction.<span hidden>HIDDEN_CANARY</span>
+    <span style="display:none">${mathValue('PRIVATE')}</span>${renderedMath}
+    <span class="mwe-math-mathml-a11y" style="display:none">${mathValue('ORPHAN')}</span>Intervening prose.${renderedMath}
+    <img alt="ALT_CANARY"><svg aria-hidden="true"><text>SVG_CANARY</text></svg>Readable ending.</p>
+    <p hidden>${formulaParagraph()}</p><p translate="no">${formulaParagraph()}</p><p class="notranslate">${formulaParagraph()}</p>`);
+  const text = collectRanges(document).map(r => r.translationSource ?? r.source).join(' ');
+  check(!/CANARY|PRIVATE|ORPHAN|dimension/.test(text) && text.includes('Readable introduction.')
+    && text.includes('Intervening prose.') && text.includes('Readable ending.'), 'hidden/unpaired content escaped');
+
+  const hiddenCases = [
+    '<mtext style="display:none">HIDDEN_CANARY</mtext>',
+    '<mtext style="visibility:hidden">HIDDEN_CANARY</mtext>',
+    '<mtext style="visibility:collapse">HIDDEN_CANARY</mtext>',
+    '<mtext style="opacity:0">HIDDEN_CANARY</mtext>',
+    '<mtext style="content-visibility:hidden">HIDDEN_CANARY</mtext>',
+    '<mtext class="hide-canary">HIDDEN_CANARY</mtext>',
+    '<mrow style="display:none"><mtext>HIDDEN_CANARY</mtext></mrow>',
+    '<mrow style="visibility:hidden"><mtext style="visibility:visible">HIDDEN_CANARY</mtext></mrow>',
+    '<mtext hidden>HIDDEN_CANARY</mtext>',
+    '<mtext aria-hidden="true">HIDDEN_CANARY</mtext>',
+  ];
+  for (const hidden of hiddenCases) {
+    const math = `<math><mi>x</mi>${hidden}<mo>+</mo><mn>1</mn></math>`;
+    for (const formula of [math, `<span class="mwe-math-mathml-a11y" style="display:none">${math}</span>${renderedMath}`,
+      `<span class="mwe-math-mathml-a11y" style="display:block;position:absolute;clip-path:inset(50%)">${math}</span>${lazyMath}`]) {
+      reset(`<style>.hide-canary{display:none}</style><p>The formula is ${formula} in this example.</p>`);
+      const ranges = collectRanges(document);
+      check(ranges.length === 1 && ranges[0].source === 'The formula is x+1 in this example.'
+        && ranges[0].protectedText?.length === 1 && ranges[0].protectedText[0].text === 'x+1'
+        && ranges[0].translationSource === 'The formula is ⟪FOLIO:0⟫ in this example.', `hidden math leaked: ${hidden}`);
+    }
+  }
+  return { name: 'paired-math-extraction', hiddenSubtreeCases: hiddenCases.length * 3, edgeAnchors: true, changedValues: true };
+}
 
 export async function pairedMathRegression() {
   const variants = [mathValue, pairedMath,
@@ -74,6 +126,15 @@ export async function pairedMathRegression() {
     engine.setDisplayMode('bilingual');
     check([...paragraph.querySelectorAll('mjx-container')].every(e => getComputedStyle(e).display !== 'none'), 'formula not restored');
     const before = requests.length;
+    paragraph.querySelector('math')!.insertAdjacentHTML('beforeend', '<mtext style="display:none">HIDDEN_CANARY</mtext>');
+    const canary = paragraph.querySelector('math')!.lastElementChild!;
+    await engine.whenIdle();
+    check(!outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'hidden addition changed formula output');
+    canary.removeAttribute('style'); await engine.whenIdle();
+    check(outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'revealed formula value was not restored');
+    canary.setAttribute('style', 'visibility:hidden'); await engine.whenIdle();
+    check(!outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'newly hidden formula value survived cache reuse');
+    check(requests.length === before && control.isConnected, 'style change retransmitted unchanged masked input or paragraph');
     paragraph.querySelector('mtext')!.textContent = 'updated'; await engine.whenIdle();
     check(requests.length === before && outputs(paragraph)[0].textContent?.includes('dupdated'), 'cached mask used stale formula');
     check(control.isConnected, 'unchanged paragraph was rebuilt');
@@ -121,8 +182,9 @@ export async function pairedMathRegression() {
 
 export async function pairedMathRaceRegression() {
   const observations = [];
-  for (const phase of ['before', 'during', 'after', 'stop', 'restore']) {
+  for (const phase of ['before', 'during', 'style-during', 'after', 'stop', 'restore']) {
     reset(`<p>${formulaParagraph(v => pairedMath(v).replace(renderedMath, lazyMath))}</p>`);
+    if (phase === 'style-during') document.querySelector('math')!.insertAdjacentHTML('beforeend', '<mtext>HIDDEN_CANARY</mtext>');
     const pending: Array<() => void> = [];
     const engine = new PageTranslator(document, {
       async translate(_job, _revision, blocks, options) {
@@ -145,6 +207,7 @@ export async function pairedMathRaceRegression() {
       if (phase === 'after') { pending[0](); await engine.whenIdle(); }
       if (phase !== 'before') render();
       if (phase === 'during') document.querySelector('mtext')!.textContent = 'current';
+      if (phase === 'style-during') document.querySelector('math')!.lastElementChild!.setAttribute('style', 'display:none');
       if (phase === 'stop' || phase === 'restore') engine.handle(phase);
       await delay(80);
       // Resolve the newer version before an uncooperative old provider replies.
@@ -155,6 +218,7 @@ export async function pairedMathRaceRegression() {
         check(outputs().length === 1, `${phase}: duplicated or missing output`);
         check(collectRanges(document)[0].protectedText?.length === 2, `${phase}: formula lost`);
         if (phase === 'during') check(outputs()[0].textContent?.includes('NEW ') && outputs()[0].textContent?.includes('dcurrent'), 'old response overwrote current formula');
+        if (phase === 'style-during') check(outputs()[0].textContent === 'NEW ' + formulaSource, 'late response restored newly hidden formula text');
       }
       observations.push({ phase, requests: pending.length, outputs: outputs().length });
     } finally { engine.dispose(); }

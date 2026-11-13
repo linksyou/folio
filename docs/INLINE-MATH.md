@@ -7,7 +7,7 @@
 ## 识别与更新边界
 
 - 辅助包装为 `.mwe-math-mathml-a11y`，仅包含一个直接 MathML 子元素及可选空白；相邻原始兄弟必须是 `mjx-container.MathJax`，或包含直接 `mjx-lazy[data-mjx-lazy]` 子元素的 `mjx-container`。后者是实际网站在懒渲染期间的结构，此时尚无 `MathJax` 类名。兄弟之间允许空白、注释及 Folio 生成节点。
-- 包装的父区域与渲染节点仍须可见。只允许读取该配对的数学语义；普通隐藏区域、无对应渲染节点的隐藏 MathML、图片 alt 和 SVG 文字不会因本次适配被纳入。MathML 的 alternate annotation 编码不重复计入公式值。
+- 包装的父区域与渲染节点仍须可见。隐藏穿透只用于辅助包装；MathML 本身及其子树仍遵守自身的 CSS 隐藏规则（包括 display、visibility、opacity、content-visibility）和 hidden/aria-hidden 属性。只允许读取该配对的数学语义；普通隐藏区域、无对应渲染节点的隐藏 MathML、图片 alt 和 SVG 文字不会因本次适配被纳入。MathML 的 alternate annotation 编码不重复计入公式值。
 - `math[display=block]`、明确的块公式类、MathJax 的 `display=true` 或渲染节点的块布局继续作为阅读边界。监听 `display` 属性变化，重新检查现有范围。
 - 范围同时保留语义包装与渲染节点，即使公式位于段尾，也在整个公式之后插入译文。仅译文模式仍遵守完整范围与交互安全规则；含链接的原文保持可见。
 - 公式文本变化会使旧范围失效；相同掩码译文可以复用，但恢复的是当前段的公式值。懒渲染只更新公式内部节点且语义不变时，保留已完成结果。旧响应、缺失或重复占位符沿用既有拒绝路径。
@@ -16,11 +16,12 @@
 
 ## 回归与复现
 
-`tests/fixtures/paired-math.ts` 是按观察到的 DOM 关系自写的样本，不含原站正文、SVG 路径或第三方实现代码。`tests/paired-math.test.ts` 覆盖配对、隐藏/裁剪包装、嵌套、段尾锚点、独立公式和隐藏 canary；原生 MathML 的 CSS 由真实浏览器检查，避免依赖 jsdom 26 不完整的 MathML 样式实现。
+`tests/fixtures/paired-math.ts` 是按观察到的 DOM 关系自写的样本，不含原站正文、SVG 路径或第三方实现代码。配对、隐藏/裁剪包装、嵌套、段尾锚点、独立公式和隐藏 canary 的提取断言统一在 `tests/browser/paired-math.ts` 中运行。增加 MathML 内部样式检查后，原六项 jsdom 测试的断言移入真实浏览器；jsdom 26 无法计算 MathML 的样式，不用样式桩代替浏览器行为。
 
-`test:browser` 中的 `paired-math` 和 `paired-math-races` 验证：
+`test:browser` 中的 `paired-math-extraction`、`paired-math` 和 `paired-math-races` 验证：
 
 - 可见 MathML、隐藏配对、裁剪配对、嵌套、注释和懒节点都保持一范围、两保护项；三类独立公式保持前后分离。
+- 10 类隐藏子树分别在原生 MathML、隐藏辅助包装和裁剪包装/懒节点中测试，共 30 例，隐藏值不进入 source 与占位符映射。输出链路另测 display/visibility 样式切换：旧值失效，缓存复用和迟到响应均不能把旧隐藏文字重新显示出来。
 - 流式半截占位符不暴露；缺失/重复占位符失败且不缓存，随后重试成功。
 - 修改一个公式复用掩码缓存但恢复新值；增删、替换及 inline/display 切换重新协调范围，不重新请求不变段落。
 - 原选区、交互链接及源节点恢复；安全段落仅译文模式不留下悬空公式。
