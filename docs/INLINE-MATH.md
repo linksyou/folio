@@ -8,6 +8,7 @@
 
 - 辅助包装为 `.mwe-math-mathml-a11y`，仅包含一个直接 MathML 子元素及可选空白；相邻原始兄弟必须是 `mjx-container.MathJax`，或包含直接 `mjx-lazy[data-mjx-lazy]` 子元素的 `mjx-container`。后者是实际网站在懒渲染期间的结构，此时尚无 `MathJax` 类名。兄弟之间允许空白、注释及 Folio 生成节点。
 - 包装的父区域与渲染节点仍须可见。隐藏穿透只用于辅助包装；MathML 本身及其子树仍遵守自身的 CSS 隐藏规则（包括 display、visibility、opacity、content-visibility）和 hidden/aria-hidden 属性。只允许读取该配对的数学语义；普通隐藏区域、无对应渲染节点的隐藏 MathML、图片 alt 和 SVG 文字不会因本次适配被纳入。MathML 的 alternate annotation 编码不重复计入公式值。
+- 辅助包装的 `visibility:hidden/collapse` 会继承到 MathML。读取此类包装时，同步临时设为 visible，再由浏览器解析内部隐藏规则，最后精确恢复原 style 属性（包括原本没有属性的情况）。读取期间禁止包装的 transition，恢复隐藏状态后再恢复 transition，避免留下可见的过渡。异常也恢复属性。普通 display:none/裁剪包装无需此步骤。观察器只忽略同批记录中最终 style 与初值相同的辅助包装变更；真实站点样式变更仍触发重新检查。此读取不让出执行权、不改变源节点或选区，但页面自己的 MutationObserver 能观察到临时 style 记录。
 - `math[display=block]`、明确的块公式类、MathJax 的 `display=true` 或渲染节点的块布局继续作为阅读边界。监听 `display` 属性变化，重新检查现有范围。
 - 范围同时保留语义包装与渲染节点，即使公式位于段尾，也在整个公式之后插入译文。仅译文模式仍遵守完整范围与交互安全规则；含链接的原文保持可见。
 - 公式文本变化会使旧范围失效；相同掩码译文可以复用，但恢复的是当前段的公式值。懒渲染只更新公式内部节点且语义不变时，保留已完成结果。旧响应、缺失或重复占位符沿用既有拒绝路径。
@@ -21,7 +22,7 @@
 `test:browser` 中的 `paired-math-extraction`、`paired-math` 和 `paired-math-races` 验证：
 
 - 可见 MathML、隐藏配对、裁剪配对、嵌套、注释和懒节点都保持一范围、两保护项；三类独立公式保持前后分离。
-- 10 类隐藏子树分别在原生 MathML、隐藏辅助包装和裁剪包装/懒节点中测试，共 30 例，隐藏值不进入 source 与占位符映射。输出链路另测 display/visibility 样式切换：旧值失效，缓存复用和迟到响应均不能把旧隐藏文字重新显示出来。
+- 12 类隐藏子树分别在原生 MathML、display:none 包装、裁剪包装/懒节点、visibility:hidden 包装及样式表 visibility:collapse 包装中测试，共 60 例，包含 !important；隐藏值不进入 source 与占位符映射。另验证根 MathML 自身隐藏、完整属性恢复、异常恢复和无遗留过渡。输出链路覆盖 visibility 包装中的内部样式切换、包装自定义属性变更、无持续自触发提取：旧值失效，缓存复用和迟到响应均不能把旧隐藏文字重新显示出来。
 - 流式半截占位符不暴露；缺失/重复占位符失败且不缓存，随后重试成功。
 - 修改一个公式复用掩码缓存但恢复新值；增删、替换及 inline/display 切换重新协调范围，不重新请求不变段落。
 - 原选区、交互链接及源节点恢复；安全段落仅译文模式不留下悬空公式。

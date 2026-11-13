@@ -228,6 +228,7 @@ export class PageTranslator {
         characterDataOldValue: true,
         subtree: true,
         attributes: true,
+        attributeOldValue: true,
         attributeFilter: ["hidden", "aria-hidden", "style", "class", "role", "contenteditable", "lang", "translate", "display"],
       });
     }
@@ -1165,6 +1166,18 @@ export class PageTranslator {
 
   private validateExistingBlocks(records: MutationRecord[]): void {
     if (this.disposed) return;
+    // MathML reads may synchronously neutralize then restore an auxiliary
+    // wrapper's visibility. Ignore only net-zero style edits in this delivery;
+    // a site edit before/after a read must still invalidate the current range.
+    const wrapperStyles = new Map<Element, string | null>();
+    for (const record of records) {
+      if (record.type !== 'attributes' || record.attributeName !== 'style') continue;
+      const target = record.target as Element;
+      if (target.matches('.mwe-math-mathml-a11y') && !wrapperStyles.has(target)) wrapperStyles.set(target, record.oldValue);
+    }
+    records = records.filter(record => record.type !== 'attributes' || record.attributeName !== 'style'
+      || !wrapperStyles.has(record.target as Element)
+      || wrapperStyles.get(record.target as Element) !== (record.target as Element).getAttribute('style'));
     this.acceptHostTextEdits(records);
     if (this.state.status === "idle") return;
     if (this.currentUrl() !== this.runUrl) {

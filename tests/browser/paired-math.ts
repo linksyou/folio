@@ -12,13 +12,17 @@ const reset = (html: string) => { document.body.innerHTML = `<main>${html}</main
 
 // These extraction assertions use Chromium: jsdom 26 cannot compute MathML CSS.
 export function pairedMathExtractionRegression() {
-  for (const style of ['display:none', 'display:block;position:absolute;width:1px;height:1px;clip-path:inset(50%)']) {
+  for (const style of ['display:none', 'display:block;position:absolute;width:1px;height:1px;clip-path:inset(50%)',
+    'visibility:hidden', 'visibility:collapse !important;transition:visibility 10s']) {
     reset(`<p>${formulaParagraph(value => pairedMath(value, style))}</p>`);
+    const original = document.body.innerHTML;
     const ranges = collectRanges(document);
     check(ranges.length === 1 && ranges[0].source === formulaSource && ranges[0].translationSource === formulaMasked,
       'paired math fragmented');
     check(JSON.stringify(ranges[0].protectedText?.map(p => p.text)) === JSON.stringify(['demb', 'dmodel']), 'wrong protected values');
     check(canHideRange(ranges[0]), 'safe paragraph cannot hide');
+    check(document.body.innerHTML === original, 'reading changed source attributes or nodes');
+    check([...document.querySelectorAll('.mwe-math-mathml-a11y')].every(e => !e.getAnimations().length), 'reading left a visibility transition');
     document.querySelector('mtext')!.textContent = 'changed';
     check(!rangeStillMatches(ranges[0]), 'formula text edit did not invalidate the range');
     check(collectRanges(document)[0].protectedText?.[0].text === 'dchanged', 'formula text edit not reread');
@@ -43,6 +47,8 @@ export function pairedMathExtractionRegression() {
     '<mtext style="opacity:0">HIDDEN_CANARY</mtext>',
     '<mtext style="content-visibility:hidden">HIDDEN_CANARY</mtext>',
     '<mtext class="hide-canary">HIDDEN_CANARY</mtext>',
+    '<mtext class="visibility-canary">HIDDEN_CANARY</mtext>',
+    '<mtext style="visibility:hidden!important">HIDDEN_CANARY</mtext>',
     '<mrow style="display:none"><mtext>HIDDEN_CANARY</mtext></mrow>',
     '<mrow style="visibility:hidden"><mtext style="visibility:visible">HIDDEN_CANARY</mtext></mrow>',
     '<mtext hidden>HIDDEN_CANARY</mtext>',
@@ -51,15 +57,32 @@ export function pairedMathExtractionRegression() {
   for (const hidden of hiddenCases) {
     const math = `<math><mi>x</mi>${hidden}<mo>+</mo><mn>1</mn></math>`;
     for (const formula of [math, `<span class="mwe-math-mathml-a11y" style="display:none">${math}</span>${renderedMath}`,
-      `<span class="mwe-math-mathml-a11y" style="display:block;position:absolute;clip-path:inset(50%)">${math}</span>${lazyMath}`]) {
-      reset(`<style>.hide-canary{display:none}</style><p>The formula is ${formula} in this example.</p>`);
+      `<span class="mwe-math-mathml-a11y" style="display:block;position:absolute;clip-path:inset(50%)">${math}</span>${lazyMath}`,
+      `<span class="mwe-math-mathml-a11y" style="visibility:hidden !important">${math}</span>${renderedMath}`,
+      `<span class="mwe-math-mathml-a11y wrapper-hidden">${math}</span>${lazyMath}`]) {
+      reset(`<style>.hide-canary{display:none}.visibility-canary{visibility:hidden!important}.wrapper-hidden{visibility:collapse!important}</style><p>The formula is ${formula} in this example.</p>`);
+      const original = document.body.innerHTML;
       const ranges = collectRanges(document);
       check(ranges.length === 1 && ranges[0].source === 'The formula is x+1 in this example.'
         && ranges[0].protectedText?.length === 1 && ranges[0].protectedText[0].text === 'x+1'
         && ranges[0].translationSource === 'The formula is ⟪FOLIO:0⟫ in this example.', `hidden math leaked: ${hidden}`);
+      check(document.body.innerHTML === original, `wrapper style attribute was not restored exactly: ${original} -> ${document.body.innerHTML}`);
     }
   }
-  return { name: 'paired-math-extraction', hiddenSubtreeCases: hiddenCases.length * 3, edgeAnchors: true, changedValues: true };
+  reset(`<style>.mwe-math-mathml-a11y{visibility:hidden!important}math{visibility:hidden}</style><p>The formula is ${pairedMath('PRIVATE', '')} in this example.</p>`);
+  check(!collectRanges(document).some(r => r.source.includes('PRIVATE')), 'explicit MathML root hiding was bypassed');
+  reset(`<p>${formulaParagraph(v => pairedMath(v, 'visibility:hidden!important'))}</p>`);
+  const original = document.body.innerHTML, computedStyle = window.getComputedStyle;
+  let threw = false;
+  try {
+    window.getComputedStyle = (element, pseudo) => {
+      if (element.localName === 'math') throw new Error('simulated style read failure');
+      return computedStyle.call(window, element, pseudo);
+    };
+    collectRanges(document);
+  } catch { threw = true; } finally { window.getComputedStyle = computedStyle; }
+  check(threw && document.body.innerHTML === original, 'failed read did not restore source styles');
+  return { name: 'paired-math-extraction', hiddenSubtreeCases: hiddenCases.length * 5, edgeAnchors: true, changedValues: true };
 }
 
 export async function pairedMathRegression() {
@@ -82,7 +105,7 @@ export async function pairedMathRegression() {
     check(JSON.stringify(collectRanges(document).map(r => r.source)) === JSON.stringify(['Before the equation.', 'After the equation.']),
       'display equation joined neighboring prose');
   }
-  reset(`<p id="formula">${formulaParagraph()}</p><p id="control">An unchanged paragraph with <code>const  a = 1</code>, <kbd>Esc</kbd>,
+  reset(`<p id="formula">${formulaParagraph(v => pairedMath(v, 'visibility:hidden !important'))}</p><p id="control">An unchanged paragraph with <code>const  a = 1</code>, <kbd>Esc</kbd>,
     <samp>ok</samp>, <span role="math">x+1</span>, <span translate="no">Local Name</span>, <span class="notranslate">Other Name</span>
     and a <a href="#footnote">reference</a>.</p><p hidden>HIDDEN_CANARY</p>`);
   const paragraph = document.querySelector('#formula')!;
@@ -120,6 +143,10 @@ export async function pairedMathRegression() {
     check(outputs(paragraph).length === 1 && outputs(paragraph)[0].textContent === '译文 ' + formulaSource, 'formula restoration failed');
     check(selection.toString() === selectedText, 'source selection changed');
     const control = outputs(document.querySelector('#control')!)[0];
+    const discoveries = () => engine.getDiagnostics().filter(e => e.stage === 'extraction.dynamic').length;
+    const initialDiscoveries = discoveries();
+    await delay(160); await engine.whenIdle();
+    check(discoveries() === initialDiscoveries, 'temporary wrapper reads scheduled ongoing discovery');
     engine.setDisplayMode('translation-only');
     check([...paragraph.querySelectorAll('mjx-container')].every(e => getComputedStyle(e).display === 'none'), 'dangling rendered formula');
     check(getComputedStyle(document.querySelector('#control a')!).display !== 'none', 'interactive source hidden');
@@ -134,6 +161,14 @@ export async function pairedMathRegression() {
     check(outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'revealed formula value was not restored');
     canary.setAttribute('style', 'visibility:hidden'); await engine.whenIdle();
     check(!outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'newly hidden formula value survived cache reuse');
+    const wrapper = paragraph.querySelector<HTMLElement>('.mwe-math-mathml-a11y')!;
+    canary.setAttribute('style', 'visibility:var(--formula-hidden, hidden)');
+    wrapper.style.setProperty('--formula-hidden', 'visible');
+    collectRanges(document); // A real wrapper edit and our temporary edits share one observer delivery.
+    await engine.whenIdle();
+    check(outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'real wrapper style change was swallowed');
+    wrapper.style.setProperty('--formula-hidden', 'hidden'); await engine.whenIdle();
+    check(!outputs(paragraph)[0].textContent?.includes('HIDDEN_CANARY'), 'wrapper inherited custom property change was missed');
     check(requests.length === before && control.isConnected, 'style change retransmitted unchanged masked input or paragraph');
     paragraph.querySelector('mtext')!.textContent = 'updated'; await engine.whenIdle();
     check(requests.length === before && outputs(paragraph)[0].textContent?.includes('dupdated'), 'cached mask used stale formula');
@@ -183,7 +218,7 @@ export async function pairedMathRegression() {
 export async function pairedMathRaceRegression() {
   const observations = [];
   for (const phase of ['before', 'during', 'style-during', 'after', 'stop', 'restore']) {
-    reset(`<p>${formulaParagraph(v => pairedMath(v).replace(renderedMath, lazyMath))}</p>`);
+    reset(`<p>${formulaParagraph(v => pairedMath(v, 'visibility:hidden').replace(renderedMath, lazyMath))}</p>`);
     if (phase === 'style-during') document.querySelector('math')!.insertAdjacentHTML('beforeend', '<mtext>HIDDEN_CANARY</mtext>');
     const pending: Array<() => void> = [];
     const engine = new PageTranslator(document, {

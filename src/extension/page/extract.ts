@@ -42,6 +42,34 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Resolve inherited visibility at the auxiliary boundary using the browser's cascade. */
+function readMathValue(wrapper: Element, read: () => string): string {
+  const view = wrapper.ownerDocument.defaultView;
+  if (!view || !['hidden', 'collapse'].includes(view.getComputedStyle(wrapper).visibility)) return read();
+  const inline = (wrapper as HTMLElement).style;
+  const original = wrapper.getAttribute('style');
+  const restore = () => {
+    // Flush CSSOM's lazy attribute serialization before removal; otherwise
+    // Chromium can recreate an empty style attribute after removeAttribute.
+    void wrapper.getAttribute('style');
+    if (original === null) wrapper.removeAttribute('style');
+    else wrapper.setAttribute('style', original);
+  };
+  // Synchronous, with no paint/yield. Preserve selectors, stylesheet rules and
+  // !important on the real MathML subtree; only its wrapper is neutralized.
+  // Suppress visibility transitions so restoring hidden does not animate it.
+  try {
+    inline.setProperty('transition', 'none', 'important');
+    inline.setProperty('visibility', 'visible', 'important');
+    return read();
+  } finally {
+    restore();
+    inline.setProperty('transition', 'none', 'important');
+    void view.getComputedStyle(wrapper).visibility;
+    restore();
+  }
+}
+
 /** Cache only during one extraction, so later DOM/style changes remain observable. */
 function createReader(document: Document) {
   const styles = new WeakMap<Element, CSSStyleDeclaration>();
@@ -121,7 +149,7 @@ function createReader(document: Document) {
       return Array.from(child.childNodes).map(value).join('');
     };
     const display = style(rendered)?.display ?? '';
-    const pair = { semantic, value: value(math), inline: !math.matches('[display="block"], .mwe-math-element-block')
+    const pair = { semantic, value: readMathValue(semantic, () => value(math)), inline: !math.matches('[display="block"], .mwe-math-element-block')
       && rendered.getAttribute('display') !== 'true'
       && (!display || ['inline', 'inline-block', 'contents'].includes(display)) };
     if (!normalize(pair.value)) return null;
