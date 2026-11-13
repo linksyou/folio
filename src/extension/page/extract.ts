@@ -42,12 +42,65 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Resolve inherited visibility at the auxiliary boundary using the browser's cascade. */
+function readMathValue(wrapper: Element, read: () => string): string {
+  const view = wrapper.ownerDocument.defaultView;
+  if (!view || !['hidden', 'collapse'].includes(view.getComputedStyle(wrapper).visibility)) return read();
+  const inline = (wrapper as HTMLElement).style;
+  const original = wrapper.getAttribute('style');
+  const nodes = [wrapper, ...wrapper.querySelectorAll('*')];
+  const existing = new Set(wrapper.getAnimations({ subtree: true }));
+  const visibilityTransition = (animation: Animation) =>
+    'transitionProperty' in animation && animation.transitionProperty === 'visibility';
+  const held = [...existing].filter(visibilityTransition).map(animation => {
+    const effect = animation.effect as KeyframeEffect;
+    return { animation, effect, target: effect.target, state: animation.playState,
+      time: animation.currentTime, start: animation.startTime };
+  });
+  const settle = () => {
+    // Resolve parents first: cancelling a parent's transition can start one on
+    // its inheriting children. Leave unrelated page animations untouched.
+    for (const node of nodes) for (const animation of node.getAnimations()) {
+      if (visibilityTransition(animation) && !existing.has(animation)) animation.cancel();
+    }
+  };
+  const restore = () => {
+    // Flush CSSOM's lazy attribute serialization before removal; otherwise
+    // Chromium can recreate an empty style attribute after removeAttribute.
+    void wrapper.getAttribute('style');
+    if (original === null) wrapper.removeAttribute('style');
+    else wrapper.setAttribute('style', original);
+  };
+  // Synchronous, with no paint/yield. Only the wrapper's declaration changes.
+  // Temporarily detach existing visibility effects so their intermediate values
+  // cannot obscure the cascade; retain their identity, timing and playback state.
+  try {
+    for (const saved of held) saved.effect.target = null;
+    inline.setProperty('visibility', 'visible', 'important');
+    settle();
+    return read();
+  } finally {
+    restore();
+    settle();
+    for (const saved of held) {
+      saved.effect.target = saved.target;
+      saved.animation.currentTime = saved.time;
+      if (saved.state === 'paused') saved.animation.pause();
+      else if (saved.state === 'running') {
+        saved.animation.play();
+        if (saved.start !== null) saved.animation.startTime = saved.start;
+      }
+    }
+  }
+}
+
 /** Cache only during one extraction, so later DOM/style changes remain observable. */
 function createReader(document: Document) {
   const styles = new WeakMap<Element, CSSStyleDeclaration>();
   const visibility = new WeakMap<Element, boolean>();
   const boundaries = new WeakMap<Element, boolean>();
   const translationModes = new WeakMap<Element, boolean>();
+  const mathPairs = new WeakMap<Element, { semantic: Element; value: string; inline: boolean } | null>();
   const view = document.defaultView;
   const style = (element: Element) => {
     let cached = styles.get(element);
@@ -57,18 +110,20 @@ function createReader(document: Document) {
     }
     return cached;
   };
-  const visible = (element: Element): boolean => {
-    const cached = visibility.get(element);
-    if (cached !== undefined) return cached;
+  const locallyVisible = (element: Element): boolean => {
     const computed = style(element);
-    const result = !element.hasAttribute("hidden")
+    return !element.hasAttribute("hidden")
       && element.getAttribute("aria-hidden") !== "true"
       && computed?.display !== "none"
       && computed?.visibility !== "hidden"
       && computed?.visibility !== "collapse"
       && computed?.contentVisibility !== "hidden"
-      && Number.parseFloat(computed?.opacity ?? "") !== 0
-      && (!element.parentElement || visible(element.parentElement));
+      && Number.parseFloat(computed?.opacity ?? "") !== 0;
+  };
+  const visible = (element: Element): boolean => {
+    const cached = visibility.get(element);
+    if (cached !== undefined) return cached;
+    const result = locallyVisible(element) && (!element.parentElement || visible(element.parentElement));
     visibility.set(element, result);
     return result;
   };
@@ -82,8 +137,56 @@ function createReader(document: Document) {
     translationModes.set(element, result);
     return result;
   };
-  const protectedElement = (element: Element) => element.matches(PROTECTED_SELECTOR) || !translatable(element);
+  // MediaWiki's MathJax renderer leaves a semantic MathML sibling behind. Only
+  // this explicit pair may read through the auxiliary wrapper's hidden style;
+  // arbitrary hidden text, SVG text and image alt remain outside the exception.
+  const mathPair = (element: Element) => {
+    if (mathPairs.has(element)) return mathPairs.get(element)!;
+    mathPairs.set(element, null);
+    if (!element.matches('.mwe-math-mathml-a11y, mjx-container')) return null;
+    const sibling = (node: Node, direction: 'previousSibling' | 'nextSibling'): Node | null => {
+      let next = adjacentOriginal(node, direction);
+      while (next && (next.nodeType === next.COMMENT_NODE
+        || (next.nodeType === next.TEXT_NODE && !normalize(next.textContent ?? '')))) {
+        next = adjacentOriginal(next, direction);
+      }
+      return next;
+    };
+    const semantic = (element.matches('.mwe-math-mathml-a11y') ? element : sibling(element, 'previousSibling')) as Element | null;
+    const rendered = (semantic && sibling(semantic, 'nextSibling')) as Element | null;
+    if (semantic?.nodeType !== 1 || !semantic.matches('.mwe-math-mathml-a11y')
+      || rendered?.nodeType !== 1 || !rendered.matches('mjx-container')
+      // Before lazy typesetting, MathJax has no class or SVG yet.
+      || (!rendered.classList.contains('MathJax') && !rendered.firstElementChild?.matches('mjx-lazy[data-mjx-lazy]'))
+      || !visible(rendered) || !semantic.parentElement || !visible(semantic.parentElement)) return null;
+    const math = semantic.firstElementChild;
+    if (!math?.matches('math') || semantic.childElementCount !== 1
+      || Array.from(semantic.childNodes).some(node => node.nodeType === node.TEXT_NODE && normalize(node.textContent ?? ''))) return null;
+    const value = (node: Node): string => {
+      if (node.nodeType === node.TEXT_NODE) return node.textContent ?? '';
+      if (node.nodeType !== node.ELEMENT_NODE) return '';
+      const child = node as Element;
+      // MathML annotations are alternate encodings, not additional formula text.
+      // Bypass only the auxiliary wrapper's hidden style, not styles on math
+      // itself or its descendants. Stop at a hidden subtree as the normal reader does.
+      if (child.matches(`annotation, annotation-xml, ${OMITTED_TEXT_SELECTOR}`) || !locallyVisible(child)) return '';
+      return Array.from(child.childNodes).map(value).join('');
+    };
+    const display = style(rendered)?.display ?? '';
+    const pair = { semantic, value: readMathValue(semantic, () => value(math)), inline: !math.matches('[display="block"], .mwe-math-element-block')
+      && rendered.getAttribute('display') !== 'true'
+      && (!display || ['inline', 'inline-block', 'contents'].includes(display)) };
+    if (!normalize(pair.value)) return null;
+    mathPairs.set(semantic, pair);
+    mathPairs.set(rendered, pair);
+    return pair;
+  };
+  const inlineMath = (node: Node) => node.nodeType === node.ELEMENT_NODE && mathPair(node as Element)?.inline === true;
+  const protectedElement = (element: Element) => !!mathPair(element) || element.matches(PROTECTED_SELECTOR) || !translatable(element);
   const boundary = (element: Element): boolean => {
+    const pair = mathPair(element);
+    if (pair) return !pair.inline;
+    if (element.matches('math[display="block"]')) return true;
     const display = style(element)?.display ?? "";
     return element.matches(BOUNDARY_SELECTOR)
       || (!!element.parentElement && translatable(element) && !translatable(element.parentElement))
@@ -91,7 +194,7 @@ function createReader(document: Document) {
   };
   const containsBoundary = (element: Element): boolean => {
     // Inline MathML has its own layout tree; it is one protected value.
-    if (element.matches(PROTECTED_SELECTOR)) return false;
+    if (mathPair(element) || element.matches(PROTECTED_SELECTOR)) return false;
     const cached = boundaries.get(element);
     if (cached !== undefined) return cached;
     const result = Array.from(element.children).some((child) =>
@@ -105,6 +208,8 @@ function createReader(document: Document) {
     if (node.nodeType === node.TEXT_NODE) return excludeCode && node.parentElement && protectedElement(node.parentElement) ? "" : node.textContent ?? "";
     if (node.nodeType !== node.ELEMENT_NODE) return "";
     const element = node as Element;
+    const pair = mathPair(element);
+    if (pair) return !excludeCode && pair.inline && element === pair.semantic ? pair.value : '';
     if (element.matches(OMITTED_TEXT_SELECTOR) || (excludeCode && protectedElement(element)) || !visible(element)) return "";
     return Array.from(element.childNodes).map((child) => text(child, excludeCode)).join("");
   };
@@ -116,7 +221,7 @@ function createReader(document: Document) {
       || computed?.fontWeight === "bold"
       || (Number.isFinite(parentSize) && size >= parentSize * 1.2);
   };
-  return { visible, boundary, containsBoundary, text, headingStyle, translatable, protectedElement };
+  return { visible, boundary, containsBoundary, text, headingStyle, translatable, protectedElement, inlineMath };
 }
 
 type Reader = ReturnType<typeof createReader>;
@@ -137,8 +242,8 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
   const ranges: SourceRange[] = [];
   let nodes: Node[] = [];
   const flush = () => {
-    while (nodes.length && !normalize(reader.text(nodes[0]))) nodes.shift();
-    while (nodes.length && !normalize(reader.text(nodes[nodes.length - 1]))) nodes.pop();
+    while (nodes.length && !reader.inlineMath(nodes[0]) && !normalize(reader.text(nodes[0]))) nodes.shift();
+    while (nodes.length && !reader.inlineMath(nodes[nodes.length - 1]) && !normalize(reader.text(nodes[nodes.length - 1]))) nodes.pop();
     const source = normalize(nodes.map((node) => reader.text(node)).join(""));
     if (source && eligible(element, nodes, source, reader)) {
       const protectedText: ProtectedText[] = [];
@@ -168,7 +273,7 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
     if (child.nodeType === child.ELEMENT_NODE) {
       const inline = child as Element;
       if (inline.matches(GENERATED_SELECTOR)) continue;
-      if (inline.matches(OMITTED_TEXT_SELECTOR) || !reader.visible(inline)
+      if (inline.matches(OMITTED_TEXT_SELECTOR) || (!reader.inlineMath(inline) && !reader.visible(inline))
         || reader.boundary(inline) || reader.containsBoundary(inline)) {
         flush();
         continue;
