@@ -18,6 +18,31 @@ function translator(transport: TranslationTransport) {
 const outputs = () => Array.from(document.querySelectorAll('[data-folio="translation"]'), e => e.textContent ?? '');
 
 async function regression(name: string) {
+  if (name === 'retry-new-job') {
+    reset(`<main><p>${sample}</p></main>`);
+    const jobs: string[] = [];
+    const engine = translator({
+      async translate(jobId, _revision, blocks, options) {
+        jobs.push(jobId);
+        await delay(jobId === 'old-job' ? 100 : 20);
+        const result = blocks.map(block => ({ id: block.id, text: `${jobId} 译文` }));
+        options?.onProgress?.(result);
+        return { ok: true, result };
+      },
+      async cancel() {},
+    });
+    try {
+      engine.handle('start', 'old-job', 'r1');
+      engine.handle('retry', 'old-job', 'r1');
+      check(jobs.length === 1, 'identical command created duplicate work');
+      engine.handle('retry', 'new-job', 'r1');
+      await engine.whenIdle();
+      await delay(120);
+      check(jobs.join(',') === 'old-job,new-job', 'new route did not take over');
+      check(outputs().length === 1 && outputs()[0] === 'new-job 译文', 'old route wrote back after retry');
+      return { name, jobs, state: engine.getState() };
+    } finally { engine.dispose(); }
+  }
   if (name === 'cache-capacity') return cacheCapacityRegression();
   if (name === 'literal-marker') {
     const source = `An unusual literal ⟪FOLIO:${'1'.repeat(2000)}⟫ is still ordinary source text.`;

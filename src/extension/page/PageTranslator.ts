@@ -1,11 +1,13 @@
 import {
   type PageAction,
   type PageState,
+  type PublicError,
   type Result,
   type TextBlock,
   type Translation,
   type TranslationPriority,
 } from "../../shared/protocol.js";
+import { pageError } from "../../shared/page-feedback.js";
 
 import { canHideRange, collectHostRanges, collectRanges, rangeStillMatches, sameRange, type SourceRange } from "./extract.js";
 import { TimingLog } from "../../shared/diagnostics.js";
@@ -61,6 +63,7 @@ interface PageBlock {
   translatedChunks: Map<number, string>;
   partialChunks: Map<number, string>;
   status: BlockStatus;
+  error?: PublicError;
   translation?: string;
   output?: HTMLElement;
 }
@@ -137,7 +140,8 @@ function stateMessage(status: PageState["status"], failed: number): string {
   if (status === "running") return "优先翻译当前屏幕，并继续翻译其余正文…";
   if (status === "watching") return "等待页面中的可翻译正文…";
   if (status === "paused") return "连接或额度需要处理，已暂停后续翻译。";
-  if (status === "completed" && failed > 0) return "翻译完成，部分段落可重试。";
+  if (status === "partial") return `部分正文未译出，${failed} 段失败，可重试。`;
+  if (status === "failed") return "尚未译出内容，可重试未完成段落。";
   if (status === "completed") return "当前正文已翻译，新增正文会自动继续。";
   if (status === "stopped") return "翻译已停止，可重试未完成段落。";
   if (status === "error") return "翻译未完成，请检查页面或连接。";
@@ -194,6 +198,7 @@ export class PageTranslator {
   private wakeRun?: () => void;
   private enabled = false;
   private disposed = false;
+  private operationError?: PublicError;
   private readonly onScroll = () => this.scheduleViewport(true);
   private readonly onViewportChange = () => this.scheduleViewport();
   // CSS can reveal initially transparent prose without a DOM mutation.
@@ -240,6 +245,18 @@ export class PageTranslator {
   }
 
   getDiagnostics() { return this.timings.read(); }
+
+  /** Preflight failures use the same state as errors received during translation. */
+  reportError(error: PublicError): PageState {
+    if (this.disposed) return this.getState();
+    this.invalidateIfPageChanged();
+    // Preflight can fail before beginStart records the new SPA URL.
+    this.runUrl = this.currentUrl();
+    void this.stop();
+    this.operationError = pageError(error);
+    this.refreshState("paused");
+    return this.getState();
+  }
 
   /** Retire an invalid extension context without removing completed translations. */
   dispose(): void {
@@ -296,7 +313,12 @@ export class PageTranslator {
       this.setState("error", "后台没有提供有效的翻译任务，请重试。");
       return this.getState();
     }
-    if (action === "retry") return this.beginRetry(jobId, settingsRevision);
+    if (action === "retry") {
+      // The background may replace a job while dynamic content starts running.
+      // Only the identical command can be ignored; a new route must take over.
+      if (this.state.status === "running" && this.jobId === jobId && this.settingsRevision === settingsRevision) return this.getState();
+      return this.beginRetry(jobId, settingsRevision);
+    }
     return this.beginStart(jobId, settingsRevision, action === "retranslate");
   }
 
@@ -304,16 +326,17 @@ export class PageTranslator {
     return this.options.getUrl?.() ?? this.document.location?.href ?? "";
   }
 
-  private beginStart(jobId: string, settingsRevision: string, force = false): PageState {
+  private beginStart(jobId: string, settingsRevision: string, force = false, preserve = false): PageState {
     this.endInitialPass("stopped");
     this.reading.end();
     this.scrollScheduled = false;
     void this.cancelCurrent();
     this.generation += 1;
     this.enabled = true;
+    this.operationError = undefined;
     this.forceTranslation = force;
     if (force) this.cache = new WeakMap();
-    this.removeOutputs();
+    if (!preserve) this.removeOutputs();
     this.jobId = jobId;
     this.settingsRevision = settingsRevision;
     this.runUrl = this.currentUrl();
@@ -321,7 +344,7 @@ export class PageTranslator {
     this.initialPassEnded = false;
     this.firstVisible = false;
     this.timings.mark("session.start", { jobId });
-    this.blocks = this.extractBlocks(settingsRevision);
+    this.blocks = this.extractBlocks(settingsRevision, preserve);
     this.timings.mark("extraction.end", { jobId }, { durationMs: performance.now() - this.runStarted, blocks: this.blocks.length });
     this.beginReading(false);
     this.beginViewport();
@@ -345,12 +368,29 @@ export class PageTranslator {
   private beginRetry(jobId: string, settingsRevision: string): PageState {
     // Re-extraction includes changed source text; the per-element cache preserves
     // successful paragraphs and only missing/invalid results are requested again.
-    return this.beginStart(jobId, settingsRevision);
+    return this.beginStart(jobId, settingsRevision, false,
+      this.settingsRevision === settingsRevision && this.runUrl === this.currentUrl());
   }
 
-  private extractBlocks(settingsRevision: string): PageBlock[] {
+  private extractBlocks(settingsRevision: string, preserve = false): PageBlock[] {
+    const previous = new Map(this.byNode);
+    const ranges = this.withOriginalVisibility(() => collectRanges(this.document));
     this.byNode.clear();
-    return collectRanges(this.document).map((range) => this.createBlock(range, settingsRevision));
+    const blocks = ranges.map((range) => {
+      const old = previous.get(range.nodes[0]);
+      if (preserve && old?.status === "completed" && sameRange(old.range, range)) {
+        this.byNode.set(old.key, old);
+        return old;
+      }
+      return this.createBlock(range, settingsRevision);
+    });
+    for (const old of previous.values()) {
+      if (this.byNode.get(old.key) !== old) {
+        old.output?.remove();
+        this.showSource(old);
+      }
+    }
+    return blocks;
   }
 
   private createBlock(range: SourceRange, settingsRevision: string): PageBlock {
@@ -604,12 +644,13 @@ export class PageTranslator {
         }
         if (aborted) continue;
         if (!result.ok) {
-          this.failBatch(batch);
+          this.failBatch(batch, result.error);
           if (PAUSE_ERROR_CODES.has(result.error.code)) {
             this.enabled = false;
             this.abortActiveBatches();
-            this.failRemaining(this.blocks);
-            this.refreshState("paused", result.error.message);
+            this.resetUnfinished();
+            this.operationError = pageError(result.error);
+            this.refreshState("paused");
             this.generation += 1;
             await this.transport.cancel(jobId).catch(() => undefined);
             return;
@@ -727,19 +768,22 @@ export class PageTranslator {
     this.refreshState("running");
   }
 
-  private failBatch(batch: Batch): void {
+  private failBatch(batch: Batch, error: PublicError = pageError({ code: "INVALID_RESPONSE" })): void {
     for (const block of new Set(batch.chunks.map((chunk) => chunk.block))) {
       if (this.isRegistered(block) && block.status !== "completed") {
         this.discardBlock(block);
+        block.error = pageError(error);
       }
     }
     this.refreshState(this.state.status === "paused" ? "paused" : "running");
   }
 
-  private failRemaining(selected: PageBlock[]): void {
-    for (const block of selected) {
-      if (block.status !== "completed") {
+  private resetUnfinished(): void {
+    for (const block of this.blocks) {
+      if (block.status === "pending" || block.status === "running") {
         this.discardBlock(block);
+        block.status = "pending";
+        block.error = undefined;
       }
     }
   }
@@ -983,7 +1027,8 @@ export class PageTranslator {
     this.generation += 1;
     this.enabled = false;
     this.abortActiveBatches();
-    this.failRemaining(this.blocks);
+    this.resetUnfinished();
+    this.operationError = undefined;
     this.refreshState("stopped");
     if (oldJob) await this.transport.cancel(oldJob).catch(() => undefined);
   }
@@ -996,6 +1041,7 @@ export class PageTranslator {
     this.enabled = false;
     this.abortActiveBatches();
     this.removeOutputs();
+    this.operationError = undefined;
     this.blocks = [];
     this.byNode.clear();
     this.jobId = undefined;
@@ -1180,7 +1226,7 @@ export class PageTranslator {
 
   /** First settled pass, not a promise that a dynamic document will never grow. */
   private endInitialPass(status: PageState["status"]): void {
-    if (this.initialPassEnded || !this.jobId || !["completed", "paused", "error", "stopped"].includes(status)) return;
+    if (this.initialPassEnded || !this.jobId || !["completed", "partial", "failed", "paused", "error", "stopped"].includes(status)) return;
     // An empty enabled SPA is still waiting for content, not an instant success.
     if (status === "completed" && this.blocks.length === 0) return;
     this.initialPassEnded = true;
@@ -1196,15 +1242,17 @@ export class PageTranslator {
   }
 
   private refreshState(status: PageState["status"], message?: string): void {
-    this.endInitialPass(status);
     const total = this.blocks.length;
     const completed = this.blocks.filter((block) => block.status === "completed").length;
     const failed = this.blocks.filter((block) => block.status === "failed").length;
     const skipped = this.blocks.filter((block) => block.status === "skipped").length;
+    const error = this.operationError ?? this.blocks.find((block) => block.status === "failed" && block.error)?.error;
+    if (status === "completed" && failed) status = completed ? "partial" : "failed";
+    this.endInitialPass(status);
     if (!message && status === "running") {
       if (this.document.visibilityState === "hidden") message = "页面正在后台继续翻译…";
       else if (!this.blocks.some((block) =>
-        (block.status === "pending" || block.status === "running") && this.viewportRank(block) === 0)) {
+        (block.status === "pending" || block.status === "running" || block.status === "failed") && this.viewportRank(block) === 0)) {
         message = "当前屏幕已翻译，正在继续翻译页面其余正文…";
       }
     }
@@ -1214,7 +1262,11 @@ export class PageTranslator {
       completed,
       skipped,
       failed,
-      message: message || (status === "completed" && total > 0 && skipped === total
+      error,
+      continuing: this.enabled,
+      message: message || (error && ["paused", "partial", "failed"].includes(status)
+        ? `${completed ? `已翻译 ${completed} / ${total} 段，${failed} 段失败` : "尚未译出内容"} · ${error.message}`
+        : status === "completed" && total > 0 && skipped === total
         ? "当前正文已是目标语言，无需翻译；新增正文会自动检查。"
         : status === "watching" && total === 0 ? "等待页面正文出现…" : stateMessage(status, failed)),
     };

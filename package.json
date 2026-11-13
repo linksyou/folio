@@ -16,6 +16,7 @@
     "install:host": "tsx scripts/install-host.ts",
     "uninstall:host": "tsx scripts/install-host.ts --uninstall",
     "test:browser": "tsx scripts/test-browser.ts",
+    "test:recovery": "npm run build && tsx scripts/test-recovery.ts",
     "test:native": "npm run build && tsx scripts/test-native.ts",
     "benchmark:status": "tsx scripts/benchmark-status.ts",
     "benchmark:browser": "tsx scripts/test-browser.ts --benchmark",

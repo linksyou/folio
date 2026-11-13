@@ -182,6 +182,10 @@ if (!contentGlobal.__folioInstalled) {
   const translator = new PageTranslator(document, transport, { onStateChange: (state) => floating?.update(state) });
   floating = new FloatingControls(document, {
     iconUrl: chrome.runtime.getURL("icons/icon-32.png"),
+    openSettings: async () => {
+      const result = await sendRuntime({ type: "page.openSettings" });
+      if (!result.ok) throw new Error("Could not open settings");
+    },
     action: async (action) => {
       const result = await sendRuntime<PageState>({ type: "page.control", action, clickedAtEpochMs: Date.now() });
       // The translator publishes live state; a delayed command acknowledgement
@@ -267,6 +271,11 @@ if (!contentGlobal.__folioInstalled) {
 
   const onMessage = (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
     if (!runtimeAvailable() || sender.id !== chrome.runtime.id) return false;
+    const failure = message as { type?: string; error?: { code: string; message: string }; url?: string };
+    if (failure.type === "page.failure" && failure.error && failure.url === location.href) {
+      sendResponse({ ok: true, result: translator.reportError(failure.error) });
+      return false;
+    }
     if ((message as { type?: string }).type === "page.diagnostics") {
       sendResponse([...translator.getDiagnostics(), ...timings.read()]);
       return false;

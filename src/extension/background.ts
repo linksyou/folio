@@ -7,6 +7,7 @@ import { reconcileSiteRules, setSiteRule, siteForUrl, siteStatus } from "./site-
 import { TranslationCache } from "./translation-cache.js";
 import { TranslationReuse } from "./translation-reuse.js";
 import { CACHE_ENABLED_KEY, cacheEnabled } from "./cache-settings.js";
+import { pageError } from "../shared/page-feedback.js";
 
 const native = new NativeClient();
 const timings = new TimingLog("background");
@@ -127,13 +128,19 @@ async function startPageAction(
   }
   // Injection only installs the page listener and observer; it does not read or
   // send page text until the validated page.command below.
-  const [status, injected] = await Promise.all([
+  const [statusResult, injectedResult] = await Promise.allSettled([
     native.request<HostStatus>({ type: "status" }),
     options.documentId ? Promise.resolve([{ documentId: options.documentId }]) : chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {
       throw new AppError("PAGE_UNAVAILABLE", "当前页面不允许扩展访问，请在普通网页上重试。");
     }),
   ]);
   requireEpoch(tabId, epoch);
+  // Install the content listener even when Host preflight fails, so the reader
+  // can recover on the page and a reopened popup sees the same error.
+  if (injectedResult.status === "rejected") throw injectedResult.reason;
+  if (statusResult.status === "rejected") throw statusResult.reason;
+  const status = statusResult.value;
+  const injected = injectedResult.value;
   if (status.protocolVersion !== PROTOCOL_VERSION) {
     throw new AppError("CONFIG_REQUIRED", "请重新构建并安装匹配版本的本地辅助程序。");
   }
@@ -155,6 +162,13 @@ async function startPageAction(
     const previous = await route(tabId);
     const previousIntent = await intent(tabId);
     requireEpoch(tabId, epoch);
+    if (previous?.documentId === targetDocument && action !== "retranslate") {
+      const current = await chrome.tabs.sendMessage(tabId, { type: "page.command", action: "status" }, { documentId: targetDocument });
+      requireEpoch(tabId, epoch);
+      const state: PageState | undefined = current?.ok ? current.result : undefined;
+      if (state && (state.status === "running" || action === "retry"
+        && state.status === "completed" && state.failed === 0)) return state;
+    }
     if (options.documentId && previousIntent &&
         (previousIntent.documentId === options.documentId ? !previousIntent.continuing : !options.automatic)) {
       throw new AppError("CANCELLED", "此页面的持续翻译已结束。");
@@ -206,6 +220,18 @@ async function startPageAction(
   });
 }
 
+async function publishPageFailure(tabId: number, url: string | undefined, epoch: symbol, error: unknown, documentId?: string): Promise<void> {
+  const failure = pageError(publicError(error));
+  if (failure.code === "CANCELLED") return;
+  await updateRoute(tabId, async () => {
+    if (pageEpochs.get(tabId) !== epoch) return;
+    await chrome.storage.session.set({ [errorKey(tabId)]: { error: failure, url } });
+    if (pageEpochs.get(tabId) !== epoch) return;
+    await chrome.tabs.sendMessage(tabId, { type: "page.failure", error: failure, url },
+      documentId ? { documentId } : { frameId: 0 }).catch(() => undefined);
+  });
+}
+
 async function pageAction(action: PageAction, tabOverride?: chrome.tabs.Tab, clickedAtEpochMs?: number, expectedDocumentId?: string): Promise<unknown> {
   const tab = tabOverride ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (tab?.id === undefined) throw new AppError("PAGE_UNAVAILABLE", "无法读取当前页面。");
@@ -223,14 +249,19 @@ async function pageAction(action: PageAction, tabOverride?: chrome.tabs.Tab, cli
       const epoch = invalidateStarts(tab.id);
       // Do not wait for the host to acknowledge cancellation before updating the page.
       void cancelRoute(tab.id, "stop", expectedDocumentId ? { documentId: expectedDocumentId, epoch } : undefined).catch(() => undefined);
-    } else {
-      const failure = (await chrome.storage.session.get(errorKey(tab.id)))[errorKey(tab.id)] as string | undefined;
-      if (failure) return { ...emptyState, status: "error", message: failure };
     }
     let result;
     try {
       result = await chrome.tabs.sendMessage(tab.id, { type: "page.command", action }, expectedDocumentId ? { documentId: expectedDocumentId } : { frameId: 0 });
     } catch {
+      if (action === "status") {
+        const failure = (await chrome.storage.session.get(errorKey(tab.id)))[errorKey(tab.id)] as
+          { error?: { code: string }; url?: string } | undefined;
+        if (failure?.error && failure.url === tab.url) return {
+          ...emptyState, status: "paused", continuing: false, error: pageError(failure.error),
+          message: pageError(failure.error).message,
+        };
+      }
       if (currentRoute) throw new AppError("PAGE_UNAVAILABLE", "页面连接已中断，请刷新网页后重试。");
       if (action === "status") return emptyState;
       return { ...emptyState, status: action === "stop" ? "stopped" : "idle", message: action === "stop" ? "已停止此页面的持续翻译。" : "已恢复原文。" };
@@ -240,10 +271,16 @@ async function pageAction(action: PageAction, tabOverride?: chrome.tabs.Tab, cli
   }
   if (action !== "start" && action !== "retry" && action !== "retranslate") throw new AppError("INVALID_REQUEST", "无法识别此操作。");
   const epoch = pageEpoch(tab.id);
-  const previous = pageStarts.get(tab.id) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(() => startPageAction(tab, action, epoch, { clickedAtEpochMs, expectedDocumentId }));
+  // Coalesce concurrent gestures; queuing starts would cancel the first retry.
+  const previous = pageStarts.get(tab.id);
+  if (previous) return previous;
+  const current = startPageAction(tab, action, epoch, { clickedAtEpochMs, expectedDocumentId });
   pageStarts.set(tab.id, current);
   try { return await current; }
+  catch (error) {
+    await publishPageFailure(tab.id, tab.url, epoch, error, expectedDocumentId);
+    throw error;
+  }
   finally { if (pageStarts.get(tab.id) === current) pageStarts.delete(tab.id); }
 }
 
@@ -296,9 +333,7 @@ async function automaticPage(message: Extract<ExtensionRequest, { type: "page.re
       documentId: sender.documentId, navigationId: message.navigationId,
     });
   } catch (error) {
-    if (pageEpochs.get(tabId) === nextEpoch && publicError(error).code !== "CANCELLED") {
-      await chrome.storage.session.set({ [errorKey(tabId)]: publicError(error).message });
-    }
+    await publishPageFailure(tabId, url, nextEpoch, error, sender.documentId);
     throw error;
   }
 }
@@ -401,10 +436,7 @@ async function handle(message: ExtensionRequest, sender: chrome.runtime.MessageS
     const epoch = pageEpoch(sender.tab.id);
     try { return await automaticPage(message, sender); }
     catch (error) {
-      const failure = publicError(error);
-      if (failure.code !== "CANCELLED" && pageEpochs.get(sender.tab.id) === epoch) {
-        await chrome.storage.session.set({ [errorKey(sender.tab.id)]: failure.message });
-      }
+      await publishPageFailure(sender.tab.id, sender.tab.url, epoch, error, sender.documentId);
       throw error;
     }
   }
@@ -514,9 +546,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command !== "translate-page" && command !== "restore-page") return;
-  void pageAction(command === "restore-page" ? "restore" : "start", tab, Date.now()).catch(async (error) => {
-    if (tab?.id !== undefined) await chrome.storage.session.set({ [errorKey(tab.id)]: publicError(error).message });
-  });
+  void pageAction(command === "restore-page" ? "restore" : "start", tab, Date.now()).catch(() => undefined);
 });
 
 const reconcile = () => { void reconcileSiteRules().then((removed) => Promise.all(removed.map(stopOrigin))).catch(() => undefined); };
