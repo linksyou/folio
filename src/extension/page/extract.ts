@@ -1,3 +1,5 @@
+import type { ProtectedText } from "../../shared/protected-text.js";
+
 const SEMANTIC_SELECTOR = "h1, h2, h3, h4, h5, h6, p, li, td, th, dt, dd, [role~='heading']";
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6, [role~='heading']";
 const MAIN_SELECTOR = "main, [role~='main']";
@@ -10,7 +12,8 @@ const OMITTED_TEXT_SELECTOR = [
   "[role~='contentinfo']", "[role~='complementary']", "[role~='button']",
   "[role~='menu']", "[role~='menuitem']", "[role~='toolbar']", "[role~='dialog']",
 ].join(", ");
-const NON_CONTENT_SELECTOR = `${OMITTED_TEXT_SELECTOR}, code`;
+const PROTECTED_SELECTOR = "code, kbd, samp, math, [role='math']";
+const NON_CONTENT_SELECTOR = `${OMITTED_TEXT_SELECTOR}, ${PROTECTED_SELECTOR}`;
 const BOUNDARY_SELECTOR = [
   SEMANTIC_SELECTOR, "div", "ul", "ol", "table", "thead", "tbody", "tfoot", "tr",
   "caption", "figcaption", "main", "article", "section", "header", "blockquote", "dl", "br", "hr",
@@ -26,6 +29,9 @@ export interface SourceRange {
   element: HTMLElement;
   nodes: Node[];
   source: string;
+  /** Masked model input; protected values remain in this page's memory. */
+  translationSource?: string;
+  protectedText?: ProtectedText[];
   before: Node | null;
   after: Node | null;
   /** A scheduling hint within the same viewport tier; lower values read first. */
@@ -41,6 +47,7 @@ function createReader(document: Document) {
   const styles = new WeakMap<Element, CSSStyleDeclaration>();
   const visibility = new WeakMap<Element, boolean>();
   const boundaries = new WeakMap<Element, boolean>();
+  const translationModes = new WeakMap<Element, boolean>();
   const view = document.defaultView;
   const style = (element: Element) => {
     let cached = styles.get(element);
@@ -65,12 +72,26 @@ function createReader(document: Document) {
     visibility.set(element, result);
     return result;
   };
+  const translatable = (element: Element): boolean => {
+    if (element.closest(".notranslate")) return false;
+    const cached = translationModes.get(element);
+    if (cached !== undefined) return cached;
+    const value = element.getAttribute("translate")?.toLowerCase();
+    const result = value === "yes" || value === "" ? true : value === "no" ? false
+      : !element.parentElement || translatable(element.parentElement);
+    translationModes.set(element, result);
+    return result;
+  };
+  const protectedElement = (element: Element) => element.matches(PROTECTED_SELECTOR) || !translatable(element);
   const boundary = (element: Element): boolean => {
     const display = style(element)?.display ?? "";
     return element.matches(BOUNDARY_SELECTOR)
-      || (!!display && !["inline", "inline-block", "contents"].includes(display));
+      || (!!element.parentElement && translatable(element) && !translatable(element.parentElement))
+      || (!!display && !["inline", "inline-block", "contents", "math", "inline math"].includes(display));
   };
   const containsBoundary = (element: Element): boolean => {
+    // Inline MathML has its own layout tree; it is one protected value.
+    if (element.matches(PROTECTED_SELECTOR)) return false;
     const cached = boundaries.get(element);
     if (cached !== undefined) return cached;
     const result = Array.from(element.children).some((child) =>
@@ -81,10 +102,10 @@ function createReader(document: Document) {
     return result;
   };
   const text = (node: Node, excludeCode = false): string => {
-    if (node.nodeType === node.TEXT_NODE) return node.textContent ?? "";
+    if (node.nodeType === node.TEXT_NODE) return excludeCode && node.parentElement && protectedElement(node.parentElement) ? "" : node.textContent ?? "";
     if (node.nodeType !== node.ELEMENT_NODE) return "";
     const element = node as Element;
-    if (element.matches(OMITTED_TEXT_SELECTOR) || (excludeCode && element.matches("code")) || !visible(element)) return "";
+    if (element.matches(OMITTED_TEXT_SELECTOR) || (excludeCode && protectedElement(element)) || !visible(element)) return "";
     return Array.from(element.childNodes).map((child) => text(child, excludeCode)).join("");
   };
   const headingStyle = (element: Element): boolean => {
@@ -95,7 +116,7 @@ function createReader(document: Document) {
       || computed?.fontWeight === "bold"
       || (Number.isFinite(parentSize) && size >= parentSize * 1.2);
   };
-  return { visible, boundary, containsBoundary, text, headingStyle };
+  return { visible, boundary, containsBoundary, text, headingStyle, translatable, protectedElement };
 }
 
 type Reader = ReturnType<typeof createReader>;
@@ -119,11 +140,28 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
     while (nodes.length && !normalize(reader.text(nodes[0]))) nodes.shift();
     while (nodes.length && !normalize(reader.text(nodes[nodes.length - 1]))) nodes.pop();
     const source = normalize(nodes.map((node) => reader.text(node)).join(""));
-    if (source && eligible(element, nodes, source, reader)) ranges.push({
-      element, nodes, source,
-      before: adjacentOriginal(nodes[0], "previousSibling"),
-      after: adjacentOriginal(nodes[nodes.length - 1], "nextSibling"),
-    });
+    if (source && eligible(element, nodes, source, reader)) {
+      const protectedText: ProtectedText[] = [];
+      let sequence = 0;
+      const serialize = (node: Node): string => {
+        if (node.nodeType !== node.ELEMENT_NODE) return reader.text(node);
+        const child = node as Element;
+        if (!reader.text(child)) return "";
+        if (reader.protectedElement(child)) {
+          let token: string;
+          do { token = `⟪FOLIO:${sequence++}⟫`; } while (source.includes(token));
+          protectedText.push({ token, text: reader.text(child) });
+          return token;
+        }
+        return Array.from(child.childNodes).map(serialize).join("");
+      };
+      const translationSource = normalize(nodes.map(serialize).join(""));
+      ranges.push({ element, nodes, source,
+        ...(protectedText.length ? { translationSource, protectedText } : {}),
+        before: adjacentOriginal(nodes[0], "previousSibling"),
+        after: adjacentOriginal(nodes[nodes.length - 1], "nextSibling"),
+      });
+    }
     nodes = [];
   };
   for (const child of element.childNodes) {
@@ -146,10 +184,14 @@ function directRanges(element: HTMLElement, reader: Reader): SourceRange[] {
 }
 
 function eligible(element: HTMLElement, nodes: Node[], source: string, reader: Reader): boolean {
+  if (!reader.translatable(element) || element.matches(PROTECTED_SELECTOR)) return false;
   // Inline code stays attached to surrounding prose, but code-only ranges and
   // numeric/UI punctuation alone are not translation candidates.
   const prose = normalize(nodes.map((node) => reader.text(node, true)).join(""));
   if (!/\p{L}/u.test(prose)) return false;
+  // Exclude identifiers alone, not the surrounding prose of a useful paragraph.
+  if (/^(?:https?:\/\/|www\.)\S+$/iu.test(prose)
+    || /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(prose)) return false;
   const links: Element[] = [];
   for (const node of nodes) {
     if (node.nodeType !== node.ELEMENT_NODE) continue;
@@ -182,6 +224,8 @@ function eligible(element: HTMLElement, nodes: Node[], source: string, reader: R
 
 export function sameRange(left: SourceRange, right: SourceRange): boolean {
   return left.element === right.element && left.source === right.source
+    && left.translationSource === right.translationSource
+    && JSON.stringify(left.protectedText) === JSON.stringify(right.protectedText)
     && left.before === right.before && left.after === right.after
     && left.nodes.length === right.nodes.length
     && left.nodes.every((node, index) => node === right.nodes[index]);
@@ -194,6 +238,15 @@ export function rangeStillMatches(range: SourceRange): boolean {
   if (range.nodes.some((node) => node.parentNode !== element)) return false;
   const reader = createReader(element.ownerDocument);
   return reader.visible(element) && directRanges(element, reader).some((current) => sameRange(range, current));
+}
+
+/** Re-read only known hosts after text edits; structural/scope edits use collectRanges. */
+export function collectHostRanges(elements: Iterable<HTMLElement>): SourceRange[] {
+  const hosts = [...elements];
+  if (!hosts.length) return [];
+  const reader = createReader(hosts[0].ownerDocument);
+  return hosts.flatMap(element => element.isConnected && !element.closest(NON_CONTENT_SELECTOR)
+    && reader.visible(element) ? directRanges(element, reader) : []);
 }
 
 /** Only hide a complete safe run; independent blocks and interactive content stay visible. */
@@ -230,7 +283,7 @@ function precedingHeadings(root: HTMLElement, reader?: Reader): HTMLElement[] {
     || (previous.childElementCount === 0 && !normalize(previous.textContent ?? "")))) {
     previous = previous.previousElementSibling as HTMLElement | null;
   }
-  if (!previous || previous.matches(NON_CONTENT_SELECTOR)) return [];
+  if (!previous || previous.matches(`${NON_CONTENT_SELECTOR}, ${CONTENT_ROOT_SELECTOR}`)) return [];
   if (previous.matches(HEADING_SELECTOR)) return [previous];
   if (previous.querySelector("nav, [role~='navigation'], [role~='banner'], main, article")) return [];
   const headings = outermost(Array.from(previous.querySelectorAll<HTMLElement>(HEADING_SELECTOR)));
@@ -308,10 +361,14 @@ export function collectRanges(document: Document): SourceRange[] {
   let ranges = collect(roots);
   // A declared main/article is a scope hint, not proof that it contains text.
   // Check its own candidates before adjacent titles can mask an empty root.
-  if (!ranges.length) {
-    roots = outermost(Array.from(document.querySelectorAll<HTMLElement>("article"))
+  if (!ranges.length || ranges.every(range => range.source.length < 24)) {
+    const articles = outermost(Array.from(document.querySelectorAll<HTMLElement>("article"))
       .filter((element) => reader.visible(element) && !element.closest(NON_CONTENT_SELECTOR)));
-    ranges = collect(roots);
+    const articleRanges = collect(articles);
+    if (!ranges.length || articleRanges.some(range => range.source.length >= 80)) {
+      roots = articles;
+      ranges = articleRanges;
+    }
   }
   if (!ranges.length) { roots = [document.body]; ranges = collect(roots); }
   const externalTitles = outermost(roots.flatMap((root) => precedingHeadings(root, reader)))

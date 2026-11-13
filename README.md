@@ -40,6 +40,10 @@ Agent 应继续完成扩展加载和本地程序连接检查。若工具无法�
 2. 打开网页，点击扩展中的「翻译正文」。也可使用网页悬浮图标或快捷键 `Alt+A`；`Alt+R` 恢复原文。
 3. 想自动翻译当前网站，可开启「此网站自动翻译」并授权。语言、显示模式、颜色和缓存可在设置中调整。
 
+Folio 遵守网页的 `translate="no"` 和 `.notranslate` 标记；`translate="yes"` 或空属性可重新启用继承了 `translate="no"` 的子区域，`.notranslate` 区域始终跳过。正文中的行内代码、按键、示例代码和 MathML/`role="math"` 公式文字由本地保留，用占位符参与翻译，避免模型改写；原始节点和样式保持在原文中。若模型丢失或重复占位符，该段会标为失败，可重试。单独的网址与邮箱不发送翻译。
+
+多个标签页的请求排队时，当前可见正文优先于预读和后台段落，后台请求也会定期得到执行机会。较长的已有段落只修改文字时会局部更新；页面结构、可见性或正文区域变化时仍重新检查全文。编辑未启用翻译服务的配置不会中断当前翻译或使已有缓存失效。
+
 网页正文会发送至你选定的模型服务，可能产生用量。凭证保存在本机；完整译文会缓存在浏览器中，可在设置中关闭或清除。项目不提供中转服务器。目前不支持 Windows 安装、PDF、iframe、Shadow DOM、OCR 和视频字幕。
 
 ## 更新与卸载
@@ -64,5 +68,7 @@ npm run install:host -- --browser chrome
 Agent 安装与维护说明见 [AGENTS.md](AGENTS.md)。代码采用 [MIT License](LICENSE)。
 
 自动化回归测试：`npm test`；类型检查和构建：`npm run check`。正文、流式显示、取消和缓存的独立浏览器测试：`npm run test:browser`（首次运行需 `npx playwright install chromium`，或设置 `FOLIO_BROWSER_CHANNEL=chrome` 使用本机 Chrome 的隔离测试实例）。自动化测试使用模拟服务，不读取账号凭据或调用真实模型。
+
+`npm run test:native` 验证构建后的 Host、Native Messaging 编解码与本机模拟 HTTP/SSE 服务，不修改日常浏览器配置。阅读质量、调度与缓存改动的验证记录见 [阅读质量迭代](docs/READING-QUALITY.md)。
 
 速度基线与诊断汇总见 [性能验证说明](docs/PERFORMANCE.md)：`npm run benchmark:status` 测隔离状态查询，`npm run benchmark:browser` 测固定页面的首段、首屏、滚动和整页耗时。P0 的修改与本机验证结果见 [P0 验证记录](docs/P0-VALIDATION.md)。

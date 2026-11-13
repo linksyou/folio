@@ -52,6 +52,7 @@ export function validateCommand(value: unknown): asserts value is HostCommand {
       return;
     }
     case "translate":
+      if (value.priority !== undefined && !["visible", "prefetch", "background"].includes(String(value.priority))) return invalid();
       if (!boundedString(value.jobId, 160) || !boundedString(value.settingsRevision, 200)) return invalid();
       if (value.batchId !== undefined && (!boundedString(value.batchId, 160) || !value.batchId)) return invalid();
       validateBlocks(value.blocks);

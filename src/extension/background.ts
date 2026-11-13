@@ -461,6 +461,7 @@ async function handle(message: ExtensionRequest, sender: chrome.runtime.MessageS
       const result = await reuse.translate({
         jobId: current.jobId, batchId, settingsRevision: current.settingsRevision,
         origin: site.origin, url: url!, blocks: message.blocks, force: current.force,
+        priority: message.priority, anchorFragment: message.anchorFragment === true,
         enabled: enabled && !current.incognito && !sender.tab.incognito,
       }, message.batchId ? (translations) => {
       // Route to this exact document. The content script also checks job/batch

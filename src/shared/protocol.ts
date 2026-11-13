@@ -3,7 +3,7 @@ import type { TargetLanguage, DisplayMode } from "./languages.js";
 export const HOST_NAME = "org.folio.host";
 export const PROTOCOL_VERSION = 1;
 /** Bump when translation instructions or placeholder semantics change. */
-export const TRANSLATION_PROMPT_VERSION = "1";
+export const TRANSLATION_PROMPT_VERSION = "2";
 export const MAX_BATCH_CHARACTERS = 4_000;
 export const MAX_BATCH_BLOCKS = 5;
 
@@ -16,6 +16,8 @@ export interface Translation {
   id: string;
   text: string;
 }
+
+export type TranslationPriority = "visible" | "prefetch" | "background";
 
 export interface Profile {
   id: string;
@@ -88,7 +90,7 @@ export type HostCommand =
   | { type: "models.list" }
   | { type: "connection.prepare" }
   | { type: "connection.test" }
-  | { type: "translate"; jobId: string; batchId?: string; settingsRevision: string; blocks: TextBlock[] }
+  | { type: "translate"; jobId: string; batchId?: string; settingsRevision: string; blocks: TextBlock[]; priority?: TranslationPriority }
   | { type: "translate.cancel"; jobId: string }
   | { type: "translate.cancelBatch"; jobId: string; batchId: string };
 
@@ -153,6 +155,6 @@ export type ExtensionRequest =
   /** Content controls can only operate their own top-level document. */
   | { type: "page.control"; action: PageAction; clickedAtEpochMs?: number }
   | { type: "page.openSettings" }
-  | { type: "translate.batch"; jobId: string; batchId?: string; settingsRevision: string; blocks: TextBlock[] }
+  | { type: "translate.batch"; jobId: string; batchId?: string; settingsRevision: string; blocks: TextBlock[]; priority?: TranslationPriority; anchorFragment?: boolean }
   | { type: "translate.cancel"; jobId: string }
   | { type: "translate.cancelBatch"; jobId: string; batchId: string };

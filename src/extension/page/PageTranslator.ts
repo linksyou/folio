@@ -4,12 +4,14 @@ import {
   type Result,
   type TextBlock,
   type Translation,
+  type TranslationPriority,
 } from "../../shared/protocol.js";
 
-import { canHideRange, collectRanges, rangeStillMatches, sameRange, type SourceRange } from "./extract.js";
+import { canHideRange, collectHostRanges, collectRanges, rangeStillMatches, sameRange, type SourceRange } from "./extract.js";
 import { TimingLog } from "../../shared/diagnostics.js";
 import type { DisplayMode, TargetLanguage } from "../../shared/languages.js";
 import { isAlreadyTargetLanguage } from "./language.js";
+import { PROTECTED_TOKEN, preservesProtectedText, restoreProtectedText } from "../../shared/protected-text.js";
 import { ReadingCohort, sourceRangeBounds, sourceRangeVisible } from "./ReadingCohort.js";
 
 // Small batches reduce time to the first visible paragraph. The host still enforces
@@ -83,6 +85,7 @@ interface ActiveBatch {
 export interface TranslationOptions {
   onProgress?: (translations: Translation[]) => void;
   signal?: AbortSignal;
+  priority?: TranslationPriority;
 }
 
 export interface TranslationTransport {
@@ -119,7 +122,10 @@ function splitText(text: string, limit = CHUNK_CHARACTERS): string[] {
       window.lastIndexOf(" "),
     ];
     const best = Math.max(...candidates);
-    const cut = best >= Math.floor(limit * 0.5) ? best + 1 : limit;
+    let cut = best >= Math.floor(limit * 0.5) ? best + 1 : limit;
+    for (const match of rest.matchAll(PROTECTED_TOKEN)) {
+      if (match.index > 0 && match.index < cut && match.index + match[0].length > cut) { cut = match.index; break; }
+    }
     parts.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trimStart();
   }
@@ -176,6 +182,8 @@ export class PageTranslator {
   private viewportScheduled = false;
   private discoveryTask: Promise<void> = Promise.resolve();
   private discoveryScheduled = false;
+  private dirtyHosts = new Map<HTMLElement, number>();
+  private fullDiscovery = false;
   private viewportEpoch = 0;
   private settledViewportEpoch = -1;
   private viewportStarted = 0;
@@ -215,7 +223,7 @@ export class PageTranslator {
         characterDataOldValue: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["hidden", "aria-hidden", "style", "class", "role", "contenteditable", "lang"],
+        attributeFilter: ["hidden", "aria-hidden", "style", "class", "role", "contenteditable", "lang", "translate"],
       });
     }
     // Capturing also observes scrolls inside an article's own scroll container.
@@ -371,7 +379,7 @@ export class PageTranslator {
       partialChunks: new Map(),
       status: "pending",
     };
-    block.chunks = splitText(source).map((text, index) => ({
+    block.chunks = splitText(range.translationSource ?? source).map((text, index) => ({
       id: `${block.id}${block.sourceRevision > 1 ? `.v${block.sourceRevision}` : ""}.${index + 1}`,
       text,
       block,
@@ -535,6 +543,9 @@ export class PageTranslator {
         jobId, settingsRevision, batch.chunks.map(({ id, text }) => ({ id, text })),
         {
           signal,
+          priority: this.document.visibilityState === "hidden" ? "background"
+            : batch.chunks.some(chunk => this.viewportRank(chunk.block) === 0) ? "visible"
+              : batch.chunks.some(chunk => this.viewportRank(chunk.block) === 1) ? "prefetch" : "background",
           onProgress: (translations) => {
             if (signal.aborted || !this.activeBatches.has(active) || !this.isCurrent(generation, jobId)) return;
             this.acceptProgress(expected, translations);
@@ -629,6 +640,7 @@ export class PageTranslator {
       const chunk = expected.get(translation.id);
       if (!chunk || !this.isRegistered(chunk.block) || chunk.block.status === "failed" || chunk.block.status === "completed") continue;
       if (typeof translation.text !== "string" || !translation.text) continue;
+      if (!preservesProtectedText(chunk.text, translation.text, true)) continue;
       chunk.block.partialChunks.set(chunk.index, translation.text);
       affected.add(chunk.block);
     }
@@ -655,7 +667,7 @@ export class PageTranslator {
       if (partial) parts.push(partial);
       break; // Later chunks must never appear ahead of an unfinished prefix.
     }
-    const text = parts.join("").trim();
+    const text = restoreProtectedText(parts.join("").trim(), block.range.protectedText ?? [], true);
     if (text) this.insertOutput(block, text, true);
   }
 
@@ -665,7 +677,8 @@ export class PageTranslator {
       translations.length !== expected.size ||
       new Set(translations.map((item) => item.id)).size !== translations.length ||
       translations.some(
-        (item) => !expected.has(item.id) || typeof item.text !== "string" || item.text.trim().length === 0,
+        (item) => !expected.has(item.id) || typeof item.text !== "string" || item.text.trim().length === 0
+          || !preservesProtectedText(expected.get(item.id)!.text, item.text),
       )
     ) {
       this.failBatch(batch);
@@ -691,10 +704,11 @@ export class PageTranslator {
         this.renderPreview(block);
         continue;
       }
-      const translation = block.chunks
+      const translated = block.chunks
         .map((chunk) => block.translatedChunks.get(chunk.index) ?? "")
         .join("")
         .trim();
+      const translation = restoreProtectedText(translated, block.range.protectedText ?? []);
       if (!translation) {
         this.discardBlock(block);
         continue;
@@ -1031,27 +1045,44 @@ export class PageTranslator {
     if (oldJob) void this.transport.cancel(oldJob).catch(() => undefined);
   }
 
-  private scheduleDiscovery(): void {
-    if (!this.enabled || !this.settingsRevision || this.discoveryScheduled) return;
+  private scheduleDiscovery(hosts?: Map<HTMLElement, number>): void {
+    if (!this.enabled || !this.settingsRevision) return;
+    if (!hosts) this.fullDiscovery = true;
+    else for (const [host, priority] of hosts) this.dirtyHosts.set(host, priority);
+    if (this.discoveryScheduled) return;
     this.discoveryScheduled = true;
     this.discoveryTask = new Promise((resolve) => {
       setTimeout(() => {
         this.discoveryScheduled = false;
+        const dirty = this.fullDiscovery ? undefined : this.dirtyHosts;
+        this.dirtyHosts = new Map();
+        this.fullDiscovery = false;
         // Reconcile the current generation. A restart during the debounce must
         // not swallow new mutations behind the previous generation's timer.
         if (this.enabled && this.settingsRevision) {
-          this.reconcileBlocks(this.settingsRevision);
+          this.reconcileBlocks(this.settingsRevision, dirty);
         }
         resolve();
       }, DYNAMIC_DELAY_MS);
     });
   }
 
-  private reconcileBlocks(settingsRevision: string): void {
+  private reconcileBlocks(settingsRevision: string, dirty?: Map<HTMLElement, number>): void {
     this.invalidateIfPageChanged();
     if (!this.enabled) return;
     const started = performance.now();
-    const sources = this.withOriginalVisibility(() => collectRanges(this.document));
+    const targets = dirty;
+    const reread = targets ? this.withOriginalVisibility(() => collectHostRanges(targets.keys()),
+      this.blocks.filter(block => targets.has(block.element))) : undefined;
+    // An emptied or newly ineligible root can change fallback scope.
+    if (reread && !reread.some(range => range.source.length >= 80)) dirty = undefined;
+    let sources: SourceRange[];
+    if (dirty && reread) {
+      for (const range of reread) range.readingPriority = dirty.get(range.element);
+      sources = [...this.blocks.filter(block => !dirty.has(block.element)).map(block => block.range), ...reread];
+      sources.sort((a, b) => a.nodes[0] === b.nodes[0] ? 0
+        : a.nodes[0].compareDocumentPosition(b.nodes[0]) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    } else sources = this.withOriginalVisibility(() => collectRanges(this.document));
     const keys = new Set(sources.map((range) => range.nodes[0]));
     for (const block of [...this.blocks]) {
       if (!keys.has(block.key)) this.invalidateBlock(block);
@@ -1067,7 +1098,7 @@ export class PageTranslator {
       if (!block) {
         block = this.createBlock(range, settingsRevision);
         added += 1;
-      } else {
+      } else if (block.range !== range) {
         // Scope priority may change when an article appears, grows or disappears,
         // even though this source and its original node anchors are unchanged.
         block.range = range;
@@ -1077,7 +1108,8 @@ export class PageTranslator {
     }
     this.blocks = next;
     this.timings.mark("extraction.dynamic", { jobId: this.jobId }, {
-      durationMs: performance.now() - started, candidates: sources.length, blocks: next.length, added,
+      durationMs: performance.now() - started, candidates: dirty ? reread!.length : sources.length,
+      blocks: next.length, added, incremental: !!dirty,
     });
     this.beginViewport();
     this.refreshState(this.runningGeneration === this.generation ? "running" : "watching");
@@ -1111,6 +1143,21 @@ export class PageTranslator {
       return [...record.addedNodes, ...record.removedNodes].some((node) => !generated(node));
     });
     if (!sourceRecords.length) return;
+    // Only known, substantial paragraph text edits can keep the current scope.
+    // Attributes, replaced nodes, new content, and mixed article/main layouts
+    // retain full discovery, including re-evaluation of reading priorities.
+    const dirty = new Map<HTMLElement, number>();
+    const local = sourceRecords.every(record => {
+      if (record.type !== "characterData") return false;
+      const block = this.blocks.find(candidate => candidate.element.tagName === "P"
+        && candidate.range.nodes.some(node => node === record.target || node.contains(record.target)));
+      if (!block || block.source.length < 80 || (record.target.textContent?.trim().length ?? 0) < 80) return false;
+      const main = block.element.closest("main, [role~='main']");
+      if (main?.querySelector("article") && this.blocks.some(candidate => main.contains(candidate.element)
+        && !candidate.element.closest("article"))) return false;
+      dirty.set(block.element, block.range.readingPriority ?? 1);
+      return true;
+    });
     // Invalidate known changed versions immediately, before the coalesced
     // discovery timer. This also cancels shared batches and requeues their peers.
     for (const block of [...this.blocks]) {
@@ -1127,7 +1174,7 @@ export class PageTranslator {
       }
       if (block.output) this.insertOutput(block, block.output.textContent ?? "", block.status !== "completed");
     }
-    if (this.enabled) this.scheduleDiscovery();
+    if (this.enabled) this.scheduleDiscovery(local ? dirty : undefined);
     this.refreshState(this.state.status);
   }
 

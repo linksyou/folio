@@ -12,6 +12,7 @@ export interface TranslationCacheEntry {
 
 export interface TranslationCacheStore {
   get(key: string): Promise<TranslationCacheEntry | undefined>;
+  getMany?(keys: string[]): Promise<Array<TranslationCacheEntry | undefined>>;
   all(): Promise<TranslationCacheEntry[]>;
   write(entries: TranslationCacheEntry[]): Promise<void>;
   delete(keys: string[]): Promise<void>;
@@ -63,6 +64,20 @@ class IndexedDbTranslationCacheStore implements TranslationCacheStore {
   }
 
   get(key: string) { return this.transaction<TranslationCacheEntry | undefined>("readonly", (store) => store.get(key)); }
+  async getMany(keys: string[]): Promise<Array<TranslationCacheEntry | undefined>> {
+    if (!keys.length) return [];
+    const database = await this.open();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction("translations", "readonly");
+      const requests = keys.map(key => transaction.objectStore("translations").get(key));
+      const timer = setTimeout(() => {
+        try { transaction.abort(); } catch { /* Already complete. */ }
+        reject(new Error("Cache transaction timed out"));
+      }, 1_000);
+      transaction.oncomplete = () => { clearTimeout(timer); resolve(requests.map(request => request.result)); };
+      transaction.onerror = transaction.onabort = () => { clearTimeout(timer); reject(transaction.error); };
+    });
+  }
   all() { return this.transaction<TranslationCacheEntry[]>("readonly", (store) => store.getAll()); }
   async write(entries: TranslationCacheEntry[]) {
     if (entries.length) await this.transaction("readwrite", (store) => {
@@ -94,6 +109,8 @@ export class TranslationCache {
   private readonly maxEntries: number;
   private queue: Promise<unknown> = Promise.resolve();
   private unavailable = false;
+  private readonly hot = new Map<string, TranslationCacheEntry>();
+  private readonly touches = new Map<string, TranslationCacheEntry>();
 
   constructor(options: TranslationCacheOptions = {}) {
     this.store = options.store ?? new IndexedDbTranslationCacheStore();
@@ -122,17 +139,37 @@ export class TranslationCache {
   }
 
   get(key: string): Promise<string | undefined> {
-    return this.operation(undefined, async () => {
-      const entry = await this.store.get(key);
-      if (!entry) return undefined;
-      if (this.now() - entry.createdAt >= this.ttlMs) { await this.store.delete([key]); return undefined; }
-      await this.store.write([{ ...entry, accessedAt: this.now() }]);
-      return entry.text;
+    return this.getMany([key]).then(entries => entries.get(key));
+  }
+
+  getMany(keys: string[]): Promise<Map<string, string>> {
+    return this.operation(new Map<string, string>(), async () => {
+      // Snapshot this batch before LRU promotion can evict a later hot hit.
+      const available = new Map(keys.map(key => [key, this.hot.get(key)]));
+      const missing = [...available.keys()].filter(key => !available.get(key));
+      const loaded = this.store.getMany ? await this.store.getMany(missing) : await Promise.all(missing.map(key => this.store.get(key)));
+      missing.forEach((key, index) => available.set(key, loaded[index]));
+      const result = new Map<string, string>();
+      for (const key of keys) {
+        const entry = available.get(key);
+        if (!entry) continue;
+        if (this.now() - entry.createdAt >= this.ttlMs) { this.hot.delete(key); this.touches.delete(key); continue; }
+        const touched = { ...entry, accessedAt: this.now() };
+        this.hot.delete(key);
+        this.hot.set(key, touched);
+        if (this.hot.size > 256) this.hot.delete(this.hot.keys().next().value!);
+        this.touches.set(key, touched);
+        result.set(key, entry.text);
+      }
+      // Access bookkeeping is flushed by the next mutation/stats operation.
+      // Reads still follow earlier writes/clears, but do not wait for a touch write.
+      return result;
     });
   }
 
   put(entries: Array<{ key: string; origin: string; text: string }>): Promise<void> {
     return this.operation(undefined, async () => {
+      await this.flushTouches();
       const now = this.now();
       const encoder = new TextEncoder();
       const accepted = entries.flatMap((entry) => {
@@ -142,12 +179,15 @@ export class TranslationCache {
         return bytes <= this.maxBytes ? [{ ...entry, createdAt: now, accessedAt: now, bytes }] : [];
       });
       if (accepted.length) await this.store.write(accepted);
+      for (const entry of accepted) this.hot.delete(entry.key);
       await this.prune();
     });
   }
 
   clear(origin?: string): Promise<void> {
     return this.operation(undefined, async () => {
+      for (const [key, entry] of this.hot) if (origin === undefined || entry.origin === origin) this.hot.delete(key);
+      for (const [key, entry] of this.touches) if (origin === undefined || entry.origin === origin) this.touches.delete(key);
       const entries = await this.store.all();
       await this.store.delete(entries.filter((entry) => origin === undefined || entry.origin === origin).map((entry) => entry.key));
     }, true);
@@ -164,6 +204,7 @@ export class TranslationCache {
   }
 
   private async prune(): Promise<TranslationCacheEntry[]> {
+    await this.flushTouches();
     const now = this.now();
     const entries = (await this.store.all()).sort((a, b) => b.accessedAt - a.accessedAt || b.createdAt - a.createdAt);
     const retained: TranslationCacheEntry[] = [];
@@ -173,7 +214,16 @@ export class TranslationCache {
       if (now - entry.createdAt >= this.ttlMs || retained.length >= this.maxEntries || bytes + entry.bytes > this.maxBytes) discarded.push(entry.key);
       else { retained.push(entry); bytes += entry.bytes; }
     }
-    if (discarded.length) await this.store.delete(discarded);
+    if (discarded.length) {
+      await this.store.delete(discarded);
+      for (const key of discarded) this.hot.delete(key);
+    }
     return retained;
+  }
+
+  private async flushTouches(): Promise<void> {
+    if (!this.touches.size) return;
+    await this.store.write([...this.touches.values()]);
+    this.touches.clear();
   }
 }
