@@ -48,6 +48,22 @@ function readMathValue(wrapper: Element, read: () => string): string {
   if (!view || !['hidden', 'collapse'].includes(view.getComputedStyle(wrapper).visibility)) return read();
   const inline = (wrapper as HTMLElement).style;
   const original = wrapper.getAttribute('style');
+  const nodes = [wrapper, ...wrapper.querySelectorAll('*')];
+  const existing = new Set(wrapper.getAnimations({ subtree: true }));
+  const visibilityTransition = (animation: Animation) =>
+    'transitionProperty' in animation && animation.transitionProperty === 'visibility';
+  const held = [...existing].filter(visibilityTransition).map(animation => {
+    const effect = animation.effect as KeyframeEffect;
+    return { animation, effect, target: effect.target, state: animation.playState,
+      time: animation.currentTime, start: animation.startTime };
+  });
+  const settle = () => {
+    // Resolve parents first: cancelling a parent's transition can start one on
+    // its inheriting children. Leave unrelated page animations untouched.
+    for (const node of nodes) for (const animation of node.getAnimations()) {
+      if (visibilityTransition(animation) && !existing.has(animation)) animation.cancel();
+    }
+  };
   const restore = () => {
     // Flush CSSOM's lazy attribute serialization before removal; otherwise
     // Chromium can recreate an empty style attribute after removeAttribute.
@@ -55,18 +71,26 @@ function readMathValue(wrapper: Element, read: () => string): string {
     if (original === null) wrapper.removeAttribute('style');
     else wrapper.setAttribute('style', original);
   };
-  // Synchronous, with no paint/yield. Preserve selectors, stylesheet rules and
-  // !important on the real MathML subtree; only its wrapper is neutralized.
-  // Suppress visibility transitions so restoring hidden does not animate it.
+  // Synchronous, with no paint/yield. Only the wrapper's declaration changes.
+  // Temporarily detach existing visibility effects so their intermediate values
+  // cannot obscure the cascade; retain their identity, timing and playback state.
   try {
-    inline.setProperty('transition', 'none', 'important');
+    for (const saved of held) saved.effect.target = null;
     inline.setProperty('visibility', 'visible', 'important');
+    settle();
     return read();
   } finally {
     restore();
-    inline.setProperty('transition', 'none', 'important');
-    void view.getComputedStyle(wrapper).visibility;
-    restore();
+    settle();
+    for (const saved of held) {
+      saved.effect.target = saved.target;
+      saved.animation.currentTime = saved.time;
+      if (saved.state === 'paused') saved.animation.pause();
+      else if (saved.state === 'running') {
+        saved.animation.play();
+        if (saved.start !== null) saved.animation.startTime = saved.start;
+      }
+    }
   }
 }
 

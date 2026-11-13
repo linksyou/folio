@@ -11,7 +11,7 @@ const outputs = (root: ParentNode = document) => [...root.querySelectorAll('[dat
 const reset = (html: string) => { document.body.innerHTML = `<main>${html}</main>`; window.scrollTo(0, 0); };
 
 // These extraction assertions use Chromium: jsdom 26 cannot compute MathML CSS.
-export function pairedMathExtractionRegression() {
+export async function pairedMathExtractionRegression() {
   for (const style of ['display:none', 'display:block;position:absolute;width:1px;height:1px;clip-path:inset(50%)',
     'visibility:hidden', 'visibility:collapse !important;transition:visibility 10s']) {
     reset(`<p>${formulaParagraph(value => pairedMath(value, style))}</p>`);
@@ -54,19 +54,22 @@ export function pairedMathExtractionRegression() {
     '<mtext hidden>HIDDEN_CANARY</mtext>',
     '<mtext aria-hidden="true">HIDDEN_CANARY</mtext>',
   ];
-  for (const hidden of hiddenCases) {
+  const transitions = ['', 'math{transition:visibility 1s}',
+    '.mwe-math-mathml-a11y *{transition:visibility 1s 1s}', '*{transition:all 1s}'];
+  for (const transition of transitions) for (const hidden of hiddenCases) {
     const math = `<math><mi>x</mi>${hidden}<mo>+</mo><mn>1</mn></math>`;
     for (const formula of [math, `<span class="mwe-math-mathml-a11y" style="display:none">${math}</span>${renderedMath}`,
       `<span class="mwe-math-mathml-a11y" style="display:block;position:absolute;clip-path:inset(50%)">${math}</span>${lazyMath}`,
       `<span class="mwe-math-mathml-a11y" style="visibility:hidden !important">${math}</span>${renderedMath}`,
       `<span class="mwe-math-mathml-a11y wrapper-hidden">${math}</span>${lazyMath}`]) {
-      reset(`<style>.hide-canary{display:none}.visibility-canary{visibility:hidden!important}.wrapper-hidden{visibility:collapse!important}</style><p>The formula is ${formula} in this example.</p>`);
+      reset(`<style>.hide-canary{display:none}.visibility-canary{visibility:hidden!important}.wrapper-hidden{visibility:collapse!important}${transition}</style><p>The formula is ${formula} in this example.</p>`);
       const original = document.body.innerHTML;
       const ranges = collectRanges(document);
       check(ranges.length === 1 && ranges[0].source === 'The formula is x+1 in this example.'
         && ranges[0].protectedText?.length === 1 && ranges[0].protectedText[0].text === 'x+1'
         && ranges[0].translationSource === 'The formula is ⟪FOLIO:0⟫ in this example.', `hidden math leaked: ${hidden}`);
       check(document.body.innerHTML === original, `wrapper style attribute was not restored exactly: ${original} -> ${document.body.innerHTML}`);
+      check(!document.getAnimations().length, 'reading left a descendant transition');
     }
   }
   reset(`<style>.mwe-math-mathml-a11y{visibility:hidden!important}math{visibility:hidden}</style><p>The formula is ${pairedMath('PRIVATE', '')} in this example.</p>`);
@@ -82,7 +85,35 @@ export function pairedMathExtractionRegression() {
     collectRanges(document);
   } catch { threw = true; } finally { window.getComputedStyle = computedStyle; }
   check(threw && document.body.innerHTML === original, 'failed read did not restore source styles');
-  return { name: 'paired-math-extraction', hiddenSubtreeCases: hiddenCases.length * 5, edgeAnchors: true, changedValues: true };
+  for (const playback of ['paused', 'pending', 'running']) {
+    reset(`<style>math{transition:visibility 10s 1s,opacity 10s}.mwe-math-mathml-a11y{transition:opacity 10s}</style>
+      <p>${formulaParagraph(v => pairedMath(v, 'visibility:visible'))}</p>`);
+    const wrappers = [...document.querySelectorAll<HTMLElement>('.mwe-math-mathml-a11y')];
+    for (const wrapper of wrappers) {
+      const math = wrapper.querySelector('math')!;
+      void getComputedStyle(math).visibility;
+      wrapper.style.visibility = 'hidden'; wrapper.style.opacity = '.5'; math.style.opacity = '.5';
+      math.querySelector('mi')!.animate([{ color: 'black' }, { color: 'blue' }], { duration: 10_000 });
+    }
+    const animations = document.getAnimations();
+    check(animations.some(a => 'transitionProperty' in a && a.transitionProperty === 'visibility'), 'test did not start visibility transitions');
+    for (const animation of animations) { animation.currentTime = 500; if (playback === 'paused') animation.pause(); }
+    if (playback === 'running') await Promise.all(animations.map(a => a.ready));
+    const snapshots = animations.map(animation => ({ animation, state: animation.playState, time: animation.currentTime,
+      start: animation.startTime, effect: animation.effect, target: (animation.effect as KeyframeEffect).target }));
+    const html = document.body.innerHTML;
+    const ranges = collectRanges(document);
+    check(ranges.length === 1 && ranges[0].source === formulaSource && ranges[0].protectedText?.length === 2,
+      `${playback}: existing transition obscured formula`);
+    const restored = document.getAnimations();
+    check(document.body.innerHTML === html && restored.length === animations.length, `${playback}: source or animation set changed`);
+    for (const saved of snapshots) check(restored.includes(saved.animation) && saved.animation.playState === saved.state
+      && saved.animation.currentTime === saved.time && saved.animation.startTime === saved.start
+      && saved.animation.effect === saved.effect && (saved.animation.effect as KeyframeEffect).target === saved.target,
+    `${playback}: existing animation state changed`);
+  }
+  return { name: 'paired-math-extraction', hiddenSubtreeCases: hiddenCases.length * 5 * transitions.length,
+    transitionVariants: transitions.length, existingAnimationStates: 3, edgeAnchors: true, changedValues: true };
 }
 
 export async function pairedMathRegression() {
@@ -105,7 +136,7 @@ export async function pairedMathRegression() {
     check(JSON.stringify(collectRanges(document).map(r => r.source)) === JSON.stringify(['Before the equation.', 'After the equation.']),
       'display equation joined neighboring prose');
   }
-  reset(`<p id="formula">${formulaParagraph(v => pairedMath(v, 'visibility:hidden !important'))}</p><p id="control">An unchanged paragraph with <code>const  a = 1</code>, <kbd>Esc</kbd>,
+  reset(`<style>.mwe-math-mathml-a11y *{transition:all 1s}</style><p id="formula">${formulaParagraph(v => pairedMath(v, 'visibility:hidden !important'))}</p><p id="control">An unchanged paragraph with <code>const  a = 1</code>, <kbd>Esc</kbd>,
     <samp>ok</samp>, <span role="math">x+1</span>, <span translate="no">Local Name</span>, <span class="notranslate">Other Name</span>
     and a <a href="#footnote">reference</a>.</p><p hidden>HIDDEN_CANARY</p>`);
   const paragraph = document.querySelector('#formula')!;
@@ -218,7 +249,7 @@ export async function pairedMathRegression() {
 export async function pairedMathRaceRegression() {
   const observations = [];
   for (const phase of ['before', 'during', 'style-during', 'after', 'stop', 'restore']) {
-    reset(`<p>${formulaParagraph(v => pairedMath(v, 'visibility:hidden').replace(renderedMath, lazyMath))}</p>`);
+    reset(`<style>.mwe-math-mathml-a11y *{transition:visibility 1s 1s}</style><p>${formulaParagraph(v => pairedMath(v, 'visibility:hidden').replace(renderedMath, lazyMath))}</p>`);
     if (phase === 'style-during') document.querySelector('math')!.insertAdjacentHTML('beforeend', '<mtext>HIDDEN_CANARY</mtext>');
     const pending: Array<() => void> = [];
     const engine = new PageTranslator(document, {
